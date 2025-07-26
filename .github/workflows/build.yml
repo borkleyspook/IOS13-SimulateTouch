@@ -82,6 +82,11 @@ jobs:
           exit 1;
         }
 
+        # After toolchain installation
+        echo "Toolchain contents:"
+        ls -lR "${HOME}/theos/toolchain"
+        file "${HOME}/theos/toolchain/linux/iphone/bin/clang"
+
         # Install ldid for signing
         curl -LO https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64
         chmod +x ldid_linux_x86_64
@@ -128,6 +133,10 @@ jobs:
 
     - name: Build for ${{ matrix.sdk }}
       run: |
+        # Add these environment variables
+        export LANG=en_US.UTF-8
+        export LC_ALL=en_US.UTF-8
+        export THEOS/bin:${PATH}
         # Add Theos bin directory to PATH
         export PATH="${THEOS}/bin:${PATH}"
         
