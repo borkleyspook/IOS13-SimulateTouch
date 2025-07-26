@@ -81,27 +81,26 @@ jobs:
 
     - name: Build for ${{ matrix.sdk }}
       run: |
-        # FIX: Use lowercase SDK path
         export SDKROOT="${THEOS}/sdks/${{ matrix.sdk }}"
         export ARCHS=arm64
         export TARGET=iphone:clang:latest:13.0
         
-        # Fix Makefile paths
         find . -name Makefile -exec sed -i "s|theos/makefiles|${THEOS}/makefiles|g" {} \;
         
-        cd SimulateTouch
+        # Updated directory names
+        cd SimulateTouch13
         echo "PACKAGE_VERSION = 1.0" > Makefile.common
         make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
         
-        cd ../SimulateTouchApp
+        cd ../SimulateTouch13App
         echo "PACKAGE_VERSION = 1.0" > Makefile.common
         make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
         
         # Prepare artifacts
         cd ..
         mkdir -p artifacts
-        cp SimulateTouch/packages/*.deb artifacts/
-        cp SimulateTouchApp/packages/*.deb artifacts/
+        cp SimulateTouch13/packages/*.deb artifacts/
+        cp SimulateTouch13App/packages/*.deb artifacts/
         
         for deb in artifacts/*.deb; do
           mv "$deb" "${deb%.deb}.${{ matrix.sdk }}.deb"
@@ -110,7 +109,6 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        # FIX: Update artifact name to match SDK case
         name: IOS13-SimulateTouch-${{ matrix.sdk }}
         path: artifacts/*.deb
 
