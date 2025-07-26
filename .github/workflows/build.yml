@@ -1,4 +1,3 @@
-
 name: Build Jailbreak Tweak (Enhanced)
 
 on:
@@ -11,33 +10,19 @@ on:
   push:
     branches: [main]
 
-env:
-  DEFAULT_SDKS: "iPhoneOS14.5.sdk,iPhoneOS15.4.sdk"
-
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       matrix:
-        sdk: ["iPhoneOS14.5.sdk", "iPhoneOS15.4.sdk"] # Default SDKs
+        sdk: ["iPhoneOS14.5.sdk", "iPhoneOS15.4.sdk"]
       fail-fast: false
       max-parallel: 3
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-
-    - name: Determine SDKs
-      id: sdks
-      run: |
-        # Use input if provided, otherwise use defaults
-        if [ -n "${{ github.event.inputs.sdk-version }}" ]; then
-          echo "SDKS=${{ github.event.inputs.sdk-version }}" >> $GITHUB_ENV
-        else
-          echo "SDKS=$DEFAULT_SDKS" >> $GITHUB_ENV
-        fi
-        echo "Selected SDKs: $SDKS"
 
     - name: Cache Theos
       id: cache-theos
@@ -46,13 +31,14 @@ jobs:
         path: ~/theos
         key: ${{ runner.os }}-theos-${{ hashFiles('**/Makefile') }}
 
-    - name: Set up Theos
+    - name: Set up Theos (Fixed)
       if: steps.cache-theos.outputs.cache-hit != 'true'
       run: |
         sudo apt-get update
         sudo apt-get install -y git clang curl libxml2-dev libssl-dev python3-dev \
-                               fakeroot dpkg-dev libncurses5-dev zlib1g-dev
+                               fakeroot dpkg-dev libncurses5-dev zlib1g-dev unzip
         
+        # Clone Theos with full history
         git clone --depth=1 https://github.com/theos/theos.git "${HOME}/theos"
         
         # Download SDKs
@@ -63,13 +49,13 @@ jobs:
         chmod -R 755 "${HOME}/theos/sdks"
         rm -rf sdks-master master.zip
         
-        # Install ldid
-        curl -LO https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_macosx_x86_64
-        chmod +x ldid_macosx_x86_64
-        sudo mv ldid_macosx_x86_64 /usr/local/bin/ldid
+        # Install ldid (fixed architecture)
+        curl -LO https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64
+        chmod +x ldid_linux_x86_64
+        sudo mv ldid_linux_x86_64 /usr/local/bin/ldid
         
-        # Verify setup
-        ${HOME}/theos/bin/nic.pl --version
+        # Verify setup (updated path)
+        ${HOME}/theos/bin/device-specific/nic.pl --version
 
     - name: Build tweak for ${{ matrix.sdk }}
       run: |
@@ -80,35 +66,32 @@ jobs:
         
         cd IOS13-SimulateTouch
         
-        # Clean previous builds
         make clean 2>/dev/null || true
         
-        # Build with specific SDK
         make package FINALPACKAGE=1 \
-          THEOS_PACKAGE_SCHEME=rootless \
-          THEOS_PLATFORM_SDK_ROOT=$SDKROOT
+          THEOS_PACKAGE_SCHEME=rootless
         
-        # Rename output with SDK version
+        # Rename output
         for deb in packages/*.deb; do
-          new_name=$(echo $deb | sed "s/_iphoneos-arm/.${{ matrix.sdk }}&/")
+          new_name="${deb%.deb}.${{ matrix.sdk }}.deb"
           mv "$deb" "$new_name"
         done
 
-    - name: Upload artifact (${{ matrix.sdk }})
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: IOS13-SimulateTouch-${{ matrix.sdk }}
         path: IOS13-SimulateTouch/packages/*${{ matrix.sdk }}*.deb
 
-    - name: Notify on failure
-      if: failure()
+    - name: Notify on failure (Fixed)
+      if: failure() && github.event_name == 'pull_request'
       uses: actions/github-script@v6
       with:
         script: |
           github.rest.issues.createComment({
             owner: context.repo.owner,
             repo: context.repo.repo,
-            issue_number: context.payload.pull_request?.number || 0,
+            issue_number: context.issue.number,
             body: `❌ Build failed for SDK: ${{ matrix.sdk }}\n` +
                   `Workflow: ${{ github.workflow }}\n` +
                   `Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}`
@@ -118,7 +101,6 @@ jobs:
       if: always()
       run: |
         echo "### Build Summary" >> $GITHUB_STEP_SUMMARY
-        echo "| SDK | Status |" >> $GITHUB_STEP_SUMMARY
-        echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
-        echo "| ${{ matrix.sdk }} | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
-        
+        echo "| SDK | Status | Artifact |" >> $GITHUB_STEP_SUMMARY
+        echo "|-----|--------|----------|" >> $GITHUB_STEP_SUMMARY
+        echo "| ${{ matrix.sdk }} | ${{ job.status }} | [Download](${{ steps.upload.outputs.artifact-url }}) |" >> $GITHUB_STEP_SUMMARY
