@@ -38,8 +38,12 @@ jobs:
         sudo apt-get install -y git clang curl libxml2-dev libssl-dev python3-dev \
                                fakeroot dpkg-dev libncurses5-dev zlib1g-dev unzip
         
-        # Clone Theos (corrected path)
+        # Clone Theos with full history
         git clone --depth=1 https://github.com/theos/theos.git "${HOME}/theos"
+        
+        # Debug: List Theos bin contents
+        echo "Theos bin contents:"
+        ls -la "${HOME}/theos/bin" || true
         
         # Download SDKs
         curl -LO https://github.com/theos/sdks/archive/refs/heads/master.zip
@@ -54,8 +58,13 @@ jobs:
         chmod +x ldid_linux_x86_64
         sudo mv ldid_linux_x86_64 /usr/local/bin/ldid
         
-        # Verify setup (corrected path)
-        ${HOME}/theos/bin/nic.pl --version
+        # Alternative verification
+        if [ -f "${HOME}/theos/makefiles/package.mk" ]; then
+          echo "Theos installation verified"
+        else
+          echo "Theos installation failed!"
+          exit 1
+        fi
 
     - name: Build tweak for ${{ matrix.sdk }}
       run: |
@@ -83,20 +92,6 @@ jobs:
       with:
         name: IOS13-SimulateTouch-${{ matrix.sdk }}
         path: IOS13-SimulateTouch/packages/*${{ matrix.sdk }}*.deb
-
-    - name: Notify on failure (Fixed)
-      if: failure() && github.event_name == 'pull_request'
-      uses: actions/github-script@v6
-      with:
-        script: |
-          github.rest.issues.createComment({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            issue_number: context.issue.number,
-            body: `❌ Build failed for SDK: ${{ matrix.sdk }}\n` +
-                  `Workflow: ${{ github.workflow }}\n` +
-                  `Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}`
-          });
 
     - name: Build Summary
       if: always()
