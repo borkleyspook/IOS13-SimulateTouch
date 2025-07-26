@@ -70,12 +70,12 @@ jobs:
           exit 1;
         }
 
-        # Add toolchain installation
+        # Fix toolchain installation - use specific version instead of "latest"
         mkdir -p "${HOME}/theos/toolchain"
-        curl -L -o toolchain.tar.gz https://github.com/theos/toolchain/releases/latest/download/linux-iphone-darwin-arm64e.tar.gz
-        tar -xzf toolchain.tar.gz -C "${HOME}/theos/toolchain"
-        rm toolchain.tar.gz
-
+        curl -L -o toolchain.tar.lzma https://github.com/theos/toolchain/releases/download/v0.4/linux-iphone-darwin-arm64e.tar.lzma
+        tar --lzma -xf toolchain.tar.lzma -C "${HOME}/theos/toolchain"
+        rm toolchain.tar.lzma
+        
         # Verify toolchain exists
         [ -f "${HOME}/theos/toolchain/linux/iphone/bin/clang" ] || { 
           echo "❌ Toolchain installation failed!";
