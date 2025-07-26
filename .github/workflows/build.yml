@@ -8,7 +8,7 @@ on:
         required: false
         default: 'iPhoneOS13.0.sdk,iPhoneOS14.5.sdk,iPhoneOS15.4.sdk'
   push:
-    branches: [main]
+    branches: [master]
 
 jobs:
   build:
