@@ -84,32 +84,37 @@ jobs:
       run: |
         export SDKROOT="${THEOS}/sdks/${{ matrix.sdk }}"
         export ARCHS=arm64
-
+        
+        # Set target based on SDK version
         if [[ "${{ matrix.sdk }}" == *"13."* ]]; then
           export TARGET=iphone:clang:13.0:9.0
+        else
+          export TARGET=iphone:clang:latest:13.0
         fi
         
         find . -name Makefile -exec sed -i "s|theos/makefiles|${THEOS}/makefiles|g" {} \;
-
-        if [ ! -d "SimulateTouch" ]; then
-          echo "❌ SimulateTouch directory missing!"
+        
+        # Verify directories exist
+        if [ ! -d "SimulateTouch13" ]; then
+          echo "❌ SimulateTouch13 directory missing!"
           exit 1
         fi
-
-        # CORRECTED DIRECTORIES HERE:
-        cd SimulateTouch
+        
+        # Build tweak
+        cd SimulateTouch13
         echo "PACKAGE_VERSION = 1.0" > Makefile.common
         make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
         
-        cd ../SimulateTouchApp
+        # Build app
+        cd ../SimulateTouch13App
         echo "PACKAGE_VERSION = 1.0" > Makefile.common
         make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
         
         # Prepare artifacts
         cd ..
         mkdir -p artifacts
-        cp SimulateTouch/packages/*.deb artifacts/
-        cp SimulateTouchApp/packages/*.deb artifacts/
+        cp SimulateTouch13/packages/*.deb artifacts/
+        cp SimulateTouch13App/packages/*.deb artifacts/
         
         for deb in artifacts/*.deb; do
           mv "$deb" "${deb%.deb}.${{ matrix.sdk }}.deb"
@@ -120,7 +125,7 @@ jobs:
       with:
         name: IOS13-SimulateTouch-${{ matrix.sdk }}
         path: artifacts/*.deb
-
+        
     - name: Build Summary
       if: always()
       run: |
