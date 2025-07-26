@@ -80,6 +80,33 @@ jobs:
         echo "${HOME}/theos/bin" >> $GITHUB_PATH
         echo "THEOS_MAKE_PATH=${HOME}/theos/makefiles" >> $GITHUB_ENV
 
+    # Add this to your workflow before the build step
+    - name: List repository contents
+      run: |
+        echo "Repository structure:"
+        ls -la
+        echo "Looking for buildable directories:"
+        find . -maxdepth 1 -type d ! -path . -exec sh -c 'echo "{}: $(find {} -name Makefile -o -name Makefile.common | wc -l) Makefiles found"' \;
+
+    - name: Verify directories
+      run: |
+        echo "Checking for build directories..."
+        if [ ! -d "SimulateTouch" ]; then
+          echo "❌ SimulateTouch directory missing!"
+          echo "Current contents:"
+          ls -la
+          exit 1
+        fi
+        
+        if [ ! -d "SimulateTouchApp" ]; then
+          echo "❌ SimulateTouchApp directory missing!"
+          echo "Current contents:"
+          ls -la
+          exit 1
+        fi
+        
+        echo "✅ All directories present"
+
     - name: Build for ${{ matrix.sdk }}
       run: |
         export SDKROOT="${THEOS}/sdks/${{ matrix.sdk }}"
@@ -94,27 +121,21 @@ jobs:
         
         find . -name Makefile -exec sed -i "s|theos/makefiles|${THEOS}/makefiles|g" {} \;
         
-        # Verify directories exist
-        if [ ! -d "SimulateTouch13" ]; then
-          echo "❌ SimulateTouch13 directory missing!"
-          exit 1
-        fi
-        
         # Build tweak
-        cd SimulateTouch13
+        cd SimulateTouch
         echo "PACKAGE_VERSION = 1.0" > Makefile.common
         make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
         
         # Build app
-        cd ../SimulateTouch13App
+        cd ../SimulateTouchApp
         echo "PACKAGE_VERSION = 1.0" > Makefile.common
         make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
         
         # Prepare artifacts
         cd ..
         mkdir -p artifacts
-        cp SimulateTouch13/packages/*.deb artifacts/
-        cp SimulateTouch13App/packages/*.deb artifacts/
+        cp SimulateTouch/packages/*.deb artifacts/
+        cp SimulateTouchApp/packages/*.deb artifacts/
         
         for deb in artifacts/*.deb; do
           mv "$deb" "${deb%.deb}.${{ matrix.sdk }}.deb"
