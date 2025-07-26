@@ -83,10 +83,15 @@ jobs:
         
         cd IOS13-SimulateTouch
         
-        # FIXED: Use ${THEOS} instead of $(THEOS)
+        # Fix makefile reference
         sed -i "s|/aggregate.mk|${THEOS}/makefiles/aggregate.mk|" Makefile
         
-        make clean
+        # Create essential project structure files
+        touch .theos
+        echo "PACKAGE_VERSION = 1.0" > Makefile.common
+        
+        # Explicitly set project directory for Theos
+        echo "THEOS_PROJECT_DIR = $(pwd)" >> Makefile
         
         # Build with rootless support
         make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
