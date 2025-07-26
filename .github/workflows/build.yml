@@ -23,6 +23,15 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        path: 'IOS13-SimulateTouch'  # Explicitly set checkout path
+
+    - name: Debug - Show directory structure
+      run: |
+        echo "Current directory: $(pwd)"
+        ls -la
+        echo "IOS13-SimulateTouch contents:"
+        ls -la IOS13-SimulateTouch/
 
     - name: Cache Theos
       id: cache-theos
@@ -31,20 +40,23 @@ jobs:
         path: ~/theos
         key: ${{ runner.os }}-theos-${{ hashFiles('**/Makefile') }}
 
-    - name: Set up Theos (Fixed)
+    - name: Set up Theos
       if: steps.cache-theos.outputs.cache-hit != 'true'
       run: |
         sudo apt-get update
         sudo apt-get install -y git clang curl libxml2-dev libssl-dev python3-dev \
                                fakeroot dpkg-dev libncurses5-dev zlib1g-dev unzip
         
-        # Clone Theos with full history
         git clone --depth=1 https://github.com/theos/theos.git "${HOME}/theos"
         
-        # Debug: List Theos bin contents
-        echo "Theos bin contents:"
-        ls -la "${HOME}/theos/bin" || true
-        
+        # Verify Theos structure
+        if [ -f "${HOME}/theos/makefiles/package.mk" ]; then
+          echo "Theos installation verified"
+        else
+          echo "Theos installation failed!"
+          exit 1
+        fi
+
         # Download SDKs
         curl -LO https://github.com/theos/sdks/archive/refs/heads/master.zip
         unzip -q master.zip
@@ -53,18 +65,10 @@ jobs:
         chmod -R 755 "${HOME}/theos/sdks"
         rm -rf sdks-master master.zip
         
-        # Install ldid (fixed architecture)
+        # Install ldid
         curl -LO https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64
         chmod +x ldid_linux_x86_64
         sudo mv ldid_linux_x86_64 /usr/local/bin/ldid
-        
-        # Alternative verification
-        if [ -f "${HOME}/theos/makefiles/package.mk" ]; then
-          echo "Theos installation verified"
-        else
-          echo "Theos installation failed!"
-          exit 1
-        fi
 
     - name: Build tweak for ${{ matrix.sdk }}
       run: |
@@ -73,7 +77,11 @@ jobs:
         export ARCHS=arm64
         export TARGET=iphone:clang:latest:13.0
         
-        cd IOS13-SimulateTouch
+        # Verify we're in the correct directory
+        echo "Building in directory: $(pwd)"
+        ls -la
+        
+        cd IOS13-SimulateTouch || { echo "Failed to enter IOS13-SimulateTouch directory"; exit 1; }
         
         make clean 2>/dev/null || true
         
