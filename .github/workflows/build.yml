@@ -91,16 +91,18 @@ jobs:
     - name: Verify directories
       run: |
         echo "Checking for build directories..."
-        if [ ! -d "layout" ]; then
-          echo "❌ layout directory missing!"
-          exit 1
-        fi
-        
         if [ ! -d "appdelegate" ]; then
           echo "❌ appdelegate directory missing!"
           exit 1
         fi
-        
+        if [ ! -d "layout" ]; then
+          echo "❌ layout directory missing!"
+          exit 1
+        fi
+        if [ ! -d "pccontrol" ]; then
+          echo "❌ pccontrol directory missing!"
+          exit 1
+        fi
         echo "✅ All directories present"
 
     - name: Build for ${{ matrix.sdk }}
@@ -115,23 +117,16 @@ jobs:
           export TARGET=iphone:clang:latest:13.0
         fi
         
+        # Update Makefiles to use correct Theos path
         find . -name Makefile -exec sed -i "s|theos/makefiles|${THEOS}/makefiles|g" {} \;
         
-        # Build tweak (using layout directory)
-        cd layout
-        echo "PACKAGE_VERSION = 1.0" > Makefile.common
-        make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
-        
-        # Build app (using appdelegate directory)
-        cd ../appdelegate
-        echo "PACKAGE_VERSION = 1.0" > Makefile.common
+        # Build all subprojects from root
+        make clean
         make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
         
         # Prepare artifacts
-        cd ..
         mkdir -p artifacts
-        cp layout/packages/*.deb artifacts/
-        cp appdelegate/packages/*.deb artifacts/
+        cp packages/*.deb artifacts/
         
         for deb in artifacts/*.deb; do
           mv "$deb" "${deb%.deb}.${{ matrix.sdk }}.deb"
