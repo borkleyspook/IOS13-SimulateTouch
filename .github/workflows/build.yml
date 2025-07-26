@@ -26,6 +26,12 @@ jobs:
       with:
         path: 'IOS13-SimulateTouch'
         submodules: 'recursive'
+        fetch-depth: 0  # Required for proper submodule initialization
+
+    - name: Initialize and update submodules
+      run: |
+        cd IOS13-SimulateTouch
+        git submodule update --init --recursive --force
 
     - name: Debug - Show directory structure
       run: |
@@ -81,6 +87,9 @@ jobs:
         export SDKROOT="${THEOS}/sdks/${{ matrix.sdk }}"
         
         cd IOS13-SimulateTouch/libplist
+        # Ensure autogen.sh is executable
+        chmod +x autogen.sh
+        
         ./autogen.sh
         ./configure --host=arm-apple-darwin --prefix="$PWD/install" \
           CC="clang -isysroot $SDKROOT -arch arm64 -arch arm64e" \
