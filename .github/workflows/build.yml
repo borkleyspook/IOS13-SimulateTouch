@@ -24,7 +24,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        path: 'src'  # Changed to avoid nesting conflict
+        path: 'src'  # Check out into 'src' directory
 
     - name: Cache Theos
       id: cache-theos
@@ -67,18 +67,11 @@ jobs:
         echo "${HOME}/theos/bin" >> $GITHUB_PATH
         echo "THEOS_MAKE_PATH=${HOME}/theos/makefiles" >> $GITHUB_ENV
 
-    - name: Prepare project
-      run: |
-        # Create workspace directory
-        mkdir -p workspace
-        mv src/* workspace/
-        cd workspace
-        touch .theos
-        echo "THEOS_PROJECT_DIR = $(pwd)" > Makefile
+    # REMOVED THE "Prepare project" STEP - WORK DIRECTLY IN src/
 
     - name: Build for ${{ matrix.sdk }}
       run: |
-        cd workspace
+        cd src  # Work directly in the checked-out repository
         export SDKROOT="${THEOS}/sdks/${{ matrix.sdk }}"
         export ARCHS=arm64
         export TARGET=iphone:clang:latest:13.0
@@ -99,8 +92,8 @@ jobs:
         # Prepare artifacts
         cd ../..
         mkdir -p artifacts
-        cp workspace/SimulateTouch/packages/*.deb artifacts/
-        cp workspace/SimulateTouchApp/packages/*.deb artifacts/
+        cp src/SimulateTouch/packages/*.deb artifacts/
+        cp src/SimulateTouchApp/packages/*.deb artifacts/
         
         # Rename with SDK version
         for deb in artifacts/*.deb; do
