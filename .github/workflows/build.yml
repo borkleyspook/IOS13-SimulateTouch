@@ -75,7 +75,7 @@ jobs:
         chmod +x ldid_linux_x86_64
         sudo mv ldid_linux_x86_64 /usr/local/bin/ldid
 
-        # Fixed toolchain installation - use gzip format
+        # Fixed toolchain installation
         mkdir -p "${HOME}/theos/toolchain"
         curl -L -o toolchain.tar.lzma https://github.com/sbingner/llvm-project/releases/download/v10.0.0-1/linux-ios-arm64e-clang-toolchain.tar.lzma
         xz -d toolchain.tar.lzma  # Decompress - outputs toolchain.tar
@@ -143,18 +143,24 @@ jobs:
         export THEOS/bin:${PATH}
         # Add Theos bin directory to PATH
         export PATH="${THEOS}/bin:${PATH}"
-        
-        # ... existing build commands ...
         export SDKROOT="${THEOS}/sdks/${{ matrix.sdk }}"
+
+        # ... existing build commands ...
         export ARCHS=arm64
         export FW_MAKEDIR="${THEOS}/makefiles"  # Explicitly set this
         
-        # Set target based on SDK version
-        if [[ "${{ matrix.sdk }}" == *"13."* ]]; then
-          export TARGET=iphone:clang:13.0:9.0
-        else
-          export TARGET=iphone:clang:latest:13.0
+        # Dynamic target detection
+        if [[ "${{ matrix.sdk }}" =~ iPhoneOS(.*)\.sdk ]]; then
+          ios_version=${BASH_REMATCH[1]}
+          export TARGET="iphone:clang:${ios_version}:${ios_version}"
         fi
+
+        # Set target based on SDK version
+        #if [[ "${{ matrix.sdk }}" == *"13."* ]]; then
+        #  export TARGET=iphone:clang:13.0:9.0
+        #else
+        #  export TARGET=iphone:clang:latest:13.0
+        #fi
         
         # Update Makefiles to use correct paths
         find . -name Makefile -exec sed -i \
