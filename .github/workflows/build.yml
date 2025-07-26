@@ -1,110 +1,46 @@
-name: Build Jailbreak Tweak (Enhanced)
+name: Build
 
-on:
-  workflow_dispatch:
-    inputs:
-      sdk-version:
-        description: 'iOS SDK version to use (comma separated)'
-        required: false
-        default: 'iPhoneOS14.5.sdk,iPhoneOS15.4.sdk'
-  push:
-    branches: [main]
+on: [push, pull_request]
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      matrix:
-        sdk: ["iPhoneOS14.5.sdk", "iPhoneOS15.4.sdk"]
-      fail-fast: false
-      max-parallel: 3
+    runs-on: macos-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        path: 'IOS13-SimulateTouch'  # Explicitly set checkout path
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          submodules: 'recursive'
 
-    - name: Debug - Show directory structure
-      run: |
-        echo "Current directory: $(pwd)"
-        ls -la
-        echo "IOS13-SimulateTouch contents:"
-        ls -la IOS13-SimulateTouch/
+      - name: Install dependencies
+        run: |
+          brew install ldid xz automake libtool pkg-config
 
-    - name: Cache Theos
-      id: cache-theos
-      uses: actions/cache@v3
-      with:
-        path: ~/theos
-        key: ${{ runner.os }}-theos-${{ hashFiles('**/Makefile') }}
+      - name: Setup Theos
+        run: |
+          git clone --recursive https://github.com/theos/theos.git "$HOME/theos"
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+          echo "$HOME/theos/bin" >> $GITHUB_PATH
+          
+          # Download iOS 13.0 SDK
+          mkdir -p "$HOME/theos/sdks"
+          curl -L https://github.com/theos/sdks/raw/master/archives/iPhoneOS13.0.sdk.tar.xz | tar -xJ -C "$HOME/theos/sdks"
 
-    - name: Set up Theos
-      if: steps.cache-theos.outputs.cache-hit != 'true'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y git clang curl libxml2-dev libssl-dev python3-dev \
-                               fakeroot dpkg-dev libncurses5-dev zlib1g-dev unzip
-        
-        git clone --depth=1 https://github.com/theos/theos.git "${HOME}/theos"
-        
-        # Verify Theos structure
-        if [ -f "${HOME}/theos/makefiles/package.mk" ]; then
-          echo "Theos installation verified"
-        else
-          echo "Theos installation failed!"
-          exit 1
-        fi
+      - name: Build libplist
+        run: |
+          cd libplist
+          ./autogen.sh
+          export SDKROOT="$HOME/theos/sdks/iPhoneOS13.0.sdk"
+          ./configure --host=arm-apple-darwin --prefix="$PWD/install" \
+            CC="clang -isysroot $SDKROOT -arch arm64 -arch arm64e" \
+            CXX="clang++ -isysroot $SDKROOT -arch arm64 -arch arm64e"
+          make
+          make install
+          echo "LIBPLIST_INCLUDE=$PWD/install/include" >> $GITHUB_ENV
+          echo "LIBPLIST_LIB=$PWD/install/lib" >> $GITHUB_ENV
 
-        # Download SDKs
-        curl -LO https://github.com/theos/sdks/archive/refs/heads/master.zip
-        unzip -q master.zip
-        mkdir -p "${HOME}/theos/sdks"
-        mv sdks-master/*.sdk "${HOME}/theos/sdks"
-        chmod -R 755 "${HOME}/theos/sdks"
-        rm -rf sdks-master master.zip
-        
-        # Install ldid
-        curl -LO https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64
-        chmod +x ldid_linux_x86_64
-        sudo mv ldid_linux_x86_64 /usr/local/bin/ldid
-
-    - name: Build tweak for ${{ matrix.sdk }}
-      run: |
-        export THEOS=${HOME}/theos
-        export SDKROOT=${THEOS}/sdks/${{ matrix.sdk }}
-        export ARCHS=arm64
-        export TARGET=iphone:clang:latest:13.0
-        
-        # Verify we're in the correct directory
-        echo "Building in directory: $(pwd)"
-        ls -la
-        
-        cd IOS13-SimulateTouch || { echo "Failed to enter IOS13-SimulateTouch directory"; exit 1; }
-        
-        make clean 2>/dev/null || true
-        
-        make package FINALPACKAGE=1 \
-          THEOS_PACKAGE_SCHEME=rootless
-        
-        # Rename output
-        for deb in packages/*.deb; do
-          new_name="${deb%.deb}.${{ matrix.sdk }}.deb"
-          mv "$deb" "$new_name"
-        done
-
-    - name: Upload artifact
-      id: upload-artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: IOS13-SimulateTouch-${{ matrix.sdk }}
-        path: IOS13-SimulateTouch/packages/*${{ matrix.sdk }}*.deb
-
-    - name: Build Summary
-      if: always()
-      run: |
-        echo "### Build Summary" >> $GITHUB_STEP_SUMMARY
-        echo "| SDK | Status | Artifact |" >> $GITHUB_STEP_SUMMARY
-        echo "|-----|--------|----------|" >> $GITHUB_STEP_SUMMARY
-        echo "| ${{ matrix.sdk }} | ${{ job.status }} | [Download](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) |" >> $GITHUB_STEP_SUMMARY
+      - name: Build tweak
+        run: |
+          export TARGET_CFLAGS="-I$LIBPLIST_INCLUDE"
+          export TARGET_LDFLAGS="-L$LIBPLIST_LIB -lplist"
+          make
