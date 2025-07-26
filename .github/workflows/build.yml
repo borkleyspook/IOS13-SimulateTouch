@@ -70,6 +70,19 @@ jobs:
           exit 1;
         }
 
+        # Add toolchain installation
+        mkdir -p "${HOME}/theos/toolchain"
+        curl -L -o toolchain.tar.gz https://github.com/theos/toolchain/releases/latest/download/linux-iphone-darwin-arm64e.tar.gz
+        tar -xzf toolchain.tar.gz -C "${HOME}/theos/toolchain"
+        rm toolchain.tar.gz
+
+        # Verify toolchain exists
+        [ -f "${HOME}/theos/toolchain/linux/iphone/bin/clang" ] || { 
+          echo "❌ Toolchain installation failed!";
+          exit 1;
+        }
+
+        # Install ldid for signing
         curl -LO https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64
         chmod +x ldid_linux_x86_64
         sudo mv ldid_linux_x86_64 /usr/local/bin/ldid
@@ -115,6 +128,10 @@ jobs:
 
     - name: Build for ${{ matrix.sdk }}
       run: |
+        # Add Theos bin directory to PATH
+        export PATH="${THEOS}/bin:${PATH}"
+        
+        # ... existing build commands ...
         export SDKROOT="${THEOS}/sdks/${{ matrix.sdk }}"
         export ARCHS=arm64
         export FW_MAKEDIR="${THEOS}/makefiles"  # Explicitly set this
