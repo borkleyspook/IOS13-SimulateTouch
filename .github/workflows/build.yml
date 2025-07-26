@@ -21,23 +21,32 @@ jobs:
       max-parallel: 3
 
     steps:
-    - name: Checkout code
+    - name: Checkout code with submodules
       uses: actions/checkout@v4
       with:
         path: 'IOS13-SimulateTouch'
         submodules: 'recursive'
-        fetch-depth: 0  # Required for proper submodule initialization
+        fetch-depth: 0
 
-    - name: Initialize and update submodules
+    - name: Verify submodule initialization
       run: |
+        echo "Verifying libplist submodule..."
         cd IOS13-SimulateTouch
-        git submodule update --init --recursive --force
+        git submodule status --recursive
+        ls -la libplist || echo "libplist not found - attempting repair"
+        
+        # Repair submodule if needed
+        if [ ! -d "libplist" ]; then
+          echo "Reinitializing missing submodule..."
+          git submodule deinit -f .
+          git submodule update --init --recursive --force
+        fi
 
     - name: Debug - Show directory structure
       run: |
         echo "Project directory:"
         ls -la IOS13-SimulateTouch/
-        echo "libplist submodule:"
+        echo "libplist submodule contents:"
         ls -la IOS13-SimulateTouch/libplist/
 
     - name: Cache Theos
@@ -87,7 +96,6 @@ jobs:
         export SDKROOT="${THEOS}/sdks/${{ matrix.sdk }}"
         
         cd IOS13-SimulateTouch/libplist
-        # Ensure autogen.sh is executable
         chmod +x autogen.sh
         
         ./autogen.sh
@@ -97,7 +105,6 @@ jobs:
         make
         make install
         
-        # Save paths for main build
         echo "LIBPLIST_INCLUDE=$(pwd)/install/include" >> $GITHUB_ENV
         echo "LIBPLIST_LIB=$(pwd)/install/lib" >> $GITHUB_ENV
 
