@@ -25,7 +25,6 @@ jobs:
       uses: actions/checkout@v4
       with:
         path: 'IOS13-SimulateTouch'
-        submodules: 'recursive'
 
     - name: Cache Theos
       id: cache-theos
@@ -42,7 +41,7 @@ jobs:
                                fakeroot dpkg-dev libncurses5-dev zlib1g-dev unzip \
                                automake libtool pkg-config coreutils xz-utils
         
-        # Install Theos
+        # Install Theos with proper directory structure
         git clone --depth=1 https://github.com/theos/theos.git "${HOME}/theos"
         
         # Verify Theos installation
@@ -68,14 +67,25 @@ jobs:
         chmod +x ldid_linux_x86_64
         sudo mv ldid_linux_x86_64 /usr/local/bin/ldid
 
+    - name: Configure Theos environment
+      run: |
+        echo "THEOS=${HOME}/theos" >> $GITHUB_ENV
+        echo "${HOME}/theos/bin" >> $GITHUB_PATH
+        
+        # Set THEOS_MAKE_PATH for proper .mk file resolution
+        echo "THEOS_MAKE_PATH=${HOME}/theos/makefiles" >> $GITHUB_ENV
+
     - name: Build tweak for ${{ matrix.sdk }}
       run: |
-        export THEOS="${HOME}/theos"
         export SDKROOT="${THEOS}/sdks/${{ matrix.sdk }}"
         export ARCHS=arm64
         export TARGET=iphone:clang:latest:13.0
         
         cd IOS13-SimulateTouch
+        
+        # Fix makefile reference
+        sed -i "s|/aggregate.mk|$(THEOS)/makefiles/aggregate.mk|" Makefile
+        
         make clean
         
         # Build with rootless support
