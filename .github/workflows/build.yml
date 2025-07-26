@@ -1,3 +1,4 @@
+
 name: Build Jailbreak Tweak (Enhanced)
 
 on:
@@ -10,19 +11,33 @@ on:
   push:
     branches: [main]
 
+env:
+  DEFAULT_SDKS: "iPhoneOS14.5.sdk,iPhoneOS15.4.sdk"
+
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       matrix:
-        sdk: ${{ fromJSON(format('["{0}"]', join(',', split(github.event.inputs.sdk-version || 'iPhoneOS14.5.sdk,iPhoneOS15.4.sdk', ','))) }}
+        sdk: ["iPhoneOS14.5.sdk", "iPhoneOS15.4.sdk"] # Default SDKs
       fail-fast: false
       max-parallel: 3
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Determine SDKs
+      id: sdks
+      run: |
+        # Use input if provided, otherwise use defaults
+        if [ -n "${{ github.event.inputs.sdk-version }}" ]; then
+          echo "SDKS=${{ github.event.inputs.sdk-version }}" >> $GITHUB_ENV
+        else
+          echo "SDKS=$DEFAULT_SDKS" >> $GITHUB_ENV
+        fi
+        echo "Selected SDKs: $SDKS"
 
     - name: Cache Theos
       id: cache-theos
@@ -90,49 +105,20 @@ jobs:
       uses: actions/github-script@v6
       with:
         script: |
-          const { owner, repo } = context.repo;
-          const runId = context.runId;
-          const workflow = context.workflow;
-          const sdk = '${{ matrix.sdk }}';
-          
           github.rest.issues.createComment({
-            owner: owner,
-            repo: repo,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
             issue_number: context.payload.pull_request?.number || 0,
-            body: `❌ Build failed for SDK: ${sdk}\n` +
-                  `Workflow: ${workflow}\n` +
-                  `Run: https://github.com/${owner}/${repo}/actions/runs/${runId}`
+            body: `❌ Build failed for SDK: ${{ matrix.sdk }}\n` +
+                  `Workflow: ${{ github.workflow }}\n` +
+                  `Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}`
           });
-          
-          // Uncomment to send email notification (requires SMTP secret)
-          /*
-          const nodemailer = require('nodemailer');
-          const transporter = nodemailer.createTransport({
-            host: '${{ secrets.SMTP_HOST }}',
-            port: ${{ secrets.SMTP_PORT || 587 }},
-            secure: ${{ secrets.SMTP_SECURE || false }},
-            auth: {
-              user: '${{ secrets.SMTP_USER }}',
-              pass: '${{ secrets.SMTP_PASSWORD }}'
-            }
-          });
-          
-          await transporter.sendMail({
-            from: '${{ secrets.SMTP_FROM }}',
-            to: '${{ secrets.NOTIFY_EMAIL }}',
-            subject: `Build Failed: ${workflow} (${sdk})`,
-            text: `Build failed for ${workflow} using SDK ${sdk}\n` +
-                  `View details: https://github.com/${owner}/${repo}/actions/runs/${runId}`
-          });
-          */
 
-# Optional: Add a summary report
     - name: Build Summary
       if: always()
       run: |
         echo "### Build Summary" >> $GITHUB_STEP_SUMMARY
-        echo "| SDK | Status | Artifact |" >> $GITHUB_STEP_SUMMARY
-        echo "|-----|--------|----------|" >> $GITHUB_STEP_SUMMARY
-        echo "| ${{ matrix.sdk }} | ${{ job.status }} | [Download](${{ steps.upload-artifact.outputs.artifact-url }}) |" >> $GITHUB_STEP_SUMMARY
-      env:
-        ARTIFACT_URL: ${{ steps.upload-artifact.outputs.artifact-url }}
+        echo "| SDK | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| ${{ matrix.sdk }} | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
+        
