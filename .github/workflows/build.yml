@@ -6,7 +6,7 @@ on:
       sdk-version:
         description: 'iOS SDK versions (comma separated)'
         required: false
-        default: 'iPhoneOS13.0.sdk,iPhoneOS14.5.sdk,iPhoneOS15.4.sdk'
+        default: 'iPhoneOS13.7.sdk,iPhoneOS14.5.sdk,iPhoneOS15.6.sdk'
   push:
     branches: [master]
 
@@ -16,7 +16,8 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        sdk: ['iPhoneOS13.0.sdk', 'iPhoneOS14.5.sdk', 'iPhoneOS15.4.sdk']  # Use uppercase
+        # Replace with available SDKs from the log
+        sdk: ['iPhoneOS13.7.sdk', 'iPhoneOS14.5.sdk', 'iPhoneOS15.6.sdk']
       fail-fast: false
       max-parallel: 3
 
