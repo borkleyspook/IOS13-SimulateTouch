@@ -70,12 +70,24 @@ jobs:
           exit 1;
         }
 
-        # Fix toolchain installation - use specific version instead of "latest"
+        # Install ldid for signing
+        curl -LO https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64
+        chmod +x ldid_linux_x86_64
+        sudo mv ldid_linux_x86_64 /usr/local/bin/ldid
+
+        # Fixed toolchain installation - use gzip format
         mkdir -p "${HOME}/theos/toolchain"
-        curl -L -o toolchain.tar.lzma https://github.com/theos/toolchain/releases/download/v0.4/linux-iphone-darwin-arm64e.tar.lzma
-        tar --lzma -xf toolchain.tar.lzma -C "${HOME}/theos/toolchain"
-        rm toolchain.tar.lzma
-        
+        curl -L -o toolchain.tar.gz https://github.com/theos/toolchain/releases/download/v0.4/linux-iphone-darwin-arm64e.tar.gz
+        tar -xzf toolchain.tar.gz -C "${HOME}/theos/toolchain"
+        rm toolchain.tar.gz
+
+        # After downloading toolchain
+        file toolchain.tar.gz
+        ls -lh toolchain.tar.gz
+
+        # Set permissions
+        chmod -R 755 "${HOME}/theos"
+
         # Verify toolchain exists
         [ -f "${HOME}/theos/toolchain/linux/iphone/bin/clang" ] || { 
           echo "❌ Toolchain installation failed!";
@@ -86,11 +98,6 @@ jobs:
         echo "Toolchain contents:"
         ls -lR "${HOME}/theos/toolchain"
         file "${HOME}/theos/toolchain/linux/iphone/bin/clang"
-
-        # Install ldid for signing
-        curl -LO https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64
-        chmod +x ldid_linux_x86_64
-        sudo mv ldid_linux_x86_64 /usr/local/bin/ldid
 
     - name: Configure Theos environment
       run: |
