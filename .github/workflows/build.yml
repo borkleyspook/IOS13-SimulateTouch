@@ -6,7 +6,7 @@ on:
       sdk-version:
         description: 'iOS SDK versions (comma separated)'
         required: false
-        default: 'iphoneos13.0.sdk,iphoneos14.5.sdk,iphoneos15.4.sdk'  # Changed to lowercase
+        default: 'iPhoneOS13.0.sdk,iPhoneOS14.5.sdk,iPhoneOS15.4.sdk'
   push:
     branches: [main]
 
@@ -16,8 +16,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        # FIX: Use lowercase SDK names to match actual filenames
-        sdk: ['iphoneos13.0.sdk', 'iphoneos14.5.sdk', 'iphoneos15.4.sdk']
+        sdk: ['iPhoneOS13.0.sdk', 'iPhoneOS14.5.sdk', 'iPhoneOS15.4.sdk']  # Use uppercase
       fail-fast: false
       max-parallel: 3
 
@@ -49,7 +48,7 @@ jobs:
         curl -L -o sdks-master.tar.gz https://github.com/theos/sdks/archive/refs/heads/master.tar.gz
         tar -xzf sdks-master.tar.gz
         
-        # Find and copy the specific SDK
+        # Use correct uppercase SDK names
         SDK_NAME="${{ matrix.sdk }}"
         if [ -d "sdks-master/$SDK_NAME" ]; then
             cp -R "sdks-master/$SDK_NAME" "${HOME}/theos/sdks/"
