@@ -78,9 +78,9 @@ jobs:
         # Fixed toolchain installation - use gzip format
         mkdir -p "${HOME}/theos/toolchain"
         curl -L -o toolchain.tar.lzma https://github.com/sbingner/llvm-project/releases/download/v10.0.0-1/linux-ios-arm64e-clang-toolchain.tar.lzma
-        xz -d toolchain.tar.lzma  # Decompress the .lzma file first
-        tar -xf toolchain.tar -C "${HOME}/theos/toolchain"  # Now extract the .tar file
-        rm toolchain.tar.lzma
+        xz -d toolchain.tar.lzma  # Decompress - outputs toolchain.tar
+        tar -xf toolchain.tar -C "${HOME}/theos/toolchain"
+        rm toolchain.tar  # Remove decompressed tar file
 
         # Set permissions
         chmod -R 755 "${HOME}/theos"
