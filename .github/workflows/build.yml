@@ -105,6 +105,14 @@ jobs:
         fi
         echo "✅ All directories present"
 
+    - name: Debug Makefile
+      run: |
+        echo "THEOS value: ${THEOS}"
+        echo "Root Makefile content:"
+        cat Makefile
+        echo "Checking for aggregate.mk:"
+        ls -la "${THEOS}/makefiles/aggregate.mk"
+
     - name: Build for ${{ matrix.sdk }}
       run: |
         export SDKROOT="${THEOS}/sdks/${{ matrix.sdk }}"
@@ -118,11 +126,13 @@ jobs:
         fi
         
         # Update Makefiles to use correct Theos path
-        find . -name Makefile -exec sed -i "s|theos/makefiles|${THEOS}/makefiles|g" {} \;
-        
-        # Build all subprojects from root
-        make clean
-        make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+        find . -name Makefile -exec sed -i \
+            -e "s|theos/makefiles|${THEOS}/makefiles|g" \
+            -e "s|\$(THEOS)/makefiles|${THEOS}/makefiles|g" {} \;
+
+        # Build all subprojects from root WITH THEOS EXPLICITLY PASSED
+        make clean THEOS="${THEOS}"
+        make package FINALPACKAGE=1 THEOS="${THEOS}" THEOS_PACKAGE_SCHEME=rootless
         
         # Prepare artifacts
         mkdir -p artifacts
