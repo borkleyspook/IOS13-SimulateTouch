@@ -14,7 +14,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          brew install ldid xz automake libtool pkg-config
+          brew install ldid xz automake libtool pkg-config coreutils
 
       - name: Setup Theos
         run: |
@@ -22,9 +22,13 @@ jobs:
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
           echo "$HOME/theos/bin" >> $GITHUB_PATH
           
-          # Download iOS 13.0 SDK
+          # Fixed iOS 13.0 SDK URL
           mkdir -p "$HOME/theos/sdks"
-          curl -L https://github.com/theos/sdks/raw/master/archives/iPhoneOS13.0.sdk.tar.xz | tar -xJ -C "$HOME/theos/sdks"
+          curl -L -O https://github.com/theos/sdks/archive/refs/heads/master.zip
+          unzip master.zip
+          mv sdks-master/iPhoneOS13.0.sdk.tar.xz .
+          unxz iPhoneOS13.0.sdk.tar.xz
+          tar xvf iPhoneOS13.0.sdk.tar -C "$HOME/theos/sdks"
 
       - name: Build libplist
         run: |
@@ -43,4 +47,4 @@ jobs:
         run: |
           export TARGET_CFLAGS="-I$LIBPLIST_INCLUDE"
           export TARGET_LDFLAGS="-L$LIBPLIST_LIB -lplist"
-          make
+          make package
