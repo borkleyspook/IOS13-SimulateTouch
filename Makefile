@@ -5,7 +5,7 @@ export THEOS_DEVICE_IP = 192.168.0.3
 
 SUBPROJECTS = appdelegate zxtouch-binary pccontrol
 
-include /opt/theos/makefiles/common.mk
+include $(THEOS)/makefiles/common.mk
 include $(FW_MAKEDIR)/aggregate.mk
 
 after-install::
