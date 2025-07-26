@@ -22,7 +22,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4  # Removed path parameter
+      uses: actions/checkout@v4
 
     - name: Cache Theos
       id: cache-theos
@@ -67,7 +67,6 @@ jobs:
 
     - name: Build for ${{ matrix.sdk }}
       run: |
-        # Work in repository root (no src/ directory)
         export SDKROOT="${THEOS}/sdks/${{ matrix.sdk }}"
         export ARCHS=arm64
         export TARGET=iphone:clang:latest:13.0
@@ -75,21 +74,21 @@ jobs:
         # Fix Makefile paths
         find . -name Makefile -exec sed -i "s|theos/makefiles|${THEOS}/makefiles|g" {} \;
         
-        # Build tweak
-        cd SimulateTouch
+        # Build tweak - note the trailing underscore
+        cd SimulateTouch_
         echo "PACKAGE_VERSION = 1.0" > Makefile.common
         make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
         
-        # Build app
-        cd ../SimulateTouchApp
+        # Build app - note the trailing underscore
+        cd ../SimulateTouchApp_
         echo "PACKAGE_VERSION = 1.0" > Makefile.common
         make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
         
         # Prepare artifacts
         cd ..
         mkdir -p artifacts
-        cp SimulateTouch/packages/*.deb artifacts/
-        cp SimulateTouchApp/packages/*.deb artifacts/
+        cp SimulateTouch_/packages/*.deb artifacts/
+        cp SimulateTouchApp_/packages/*.deb artifacts/
         
         # Rename with SDK version
         for deb in artifacts/*.deb; do
