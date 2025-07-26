@@ -45,13 +45,26 @@ jobs:
         
         mkdir -p "${HOME}/theos/sdks"
         
-        # Download SDKs using lowercase names
-        SDK_NAME=$(echo "${{ matrix.sdk }}" | tr '[:upper:]' '[:lower:]')
-        curl -LO "https://github.com/theos/sdks/raw/master/$SDK_NAME.tar.xz"
+        # Use direct download URL with proper case handling
+        SDK_NAME="${{ matrix.sdk }}"
+        SDK_URL="https://github.com/theos/sdks/raw/master/${SDK_NAME}.tar.xz"
         
-        # Extract SDK with proper directory handling
-        tar -xf "$SDK_NAME.tar.xz" -C "${HOME}/theos/sdks"
-        rm "$SDK_NAME.tar.xz"
+        echo "Downloading SDK from: $SDK_URL"
+        curl -L -o "${SDK_NAME}.tar.xz" "$SDK_URL" || { 
+            echo "❌ SDK download failed"; 
+            exit 1;
+        }
+        
+        # Verify download size
+        MIN_SIZE=50000000  # 50MB
+        ACTUAL_SIZE=$(wc -c < "${SDK_NAME}.tar.xz")
+        if [ "$ACTUAL_SIZE" -lt "$MIN_SIZE" ]; then
+            echo "❌ Downloaded file too small (${ACTUAL_SIZE} bytes), expected SDK tarball"
+            exit 1
+        fi
+    
+        tar -xf "${SDK_NAME}.tar.xz" -C "${HOME}/theos/sdks"
+        rm "${SDK_NAME}.tar.xz"
         
         # Verify extraction
         [ -d "${HOME}/theos/sdks/${{ matrix.sdk }}" ] || { 
