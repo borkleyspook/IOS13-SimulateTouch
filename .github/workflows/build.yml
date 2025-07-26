@@ -16,7 +16,11 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        sdk: ${{ fromJSON(format('[{0}]', join(fromJSON('["{0}"]'.format(github.event.inputs.sdk-version || 'iPhoneOS13.0.sdk,iPhoneOS14.5.sdk,iPhoneOS15.4.sdk')), ',')) }}
+        sdk: ${{ github.event.inputs.sdk-version || 'iPhoneOS13.0.sdk,iPhoneOS14.5.sdk,iPhoneOS15.4.sdk' }}
+        include:
+          - sdk: iPhoneOS13.0.sdk
+          - sdk: iPhoneOS14.5.sdk
+          - sdk: iPhoneOS15.4.sdk
       fail-fast: false
       max-parallel: 3
 
@@ -59,7 +63,14 @@ jobs:
         mkdir -p "${HOME}/theos/sdks"
         curl -LO https://github.com/theos/sdks/archive/refs/heads/master.zip
         unzip -q master.zip -d sdks-temp
-        find sdks-temp -name '*.sdk.tar.xz' -exec sh -c 'f="{}"; xz -d "$f"; tar -xf "${f%.xz}" -C "${HOME}/theos/sdks"' \;
+        
+        # Extract all SDK archives
+        find sdks-temp -name '*.sdk.tar.xz' -exec sh -c '
+          f="$1"
+          xz -d "$f"
+          tar -xf "${f%.xz}" -C "${HOME}/theos/sdks"
+        ' sh {} \;
+        
         rm -rf sdks-temp master.zip
         
         # Install ldid
