@@ -22,13 +22,16 @@ jobs:
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
           echo "$HOME/theos/bin" >> $GITHUB_PATH
           
-          # Fixed iOS 13.0 SDK URL
+          # Download iOS 13.0 SDK directly
           mkdir -p "$HOME/theos/sdks"
-          curl -L -O https://github.com/theos/sdks/archive/refs/heads/master.zip
-          unzip master.zip
-          mv sdks-master/iPhoneOS13.0.sdk.tar.xz .
-          unxz iPhoneOS13.0.sdk.tar.xz
-          tar xvf iPhoneOS13.0.sdk.tar -C "$HOME/theos/sdks"
+          curl -L -o "$HOME/theos/sdks/iPhoneOS13.0.sdk.tar.xz" "https://github.com/theos/sdks/raw/archives/iPhoneOS13.0.sdk.tar.xz"
+          
+          # Extract SDK
+          unxz "$HOME/theos/sdks/iPhoneOS13.0.sdk.tar.xz"
+          tar xvf "$HOME/theos/sdks/iPhoneOS13.0.sdk.tar" -C "$HOME/theos/sdks"
+          
+          # Cleanup
+          rm "$HOME/theos/sdks/iPhoneOS13.0.sdk.tar"
 
       - name: Build libplist
         run: |
