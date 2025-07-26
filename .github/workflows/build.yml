@@ -6,7 +6,7 @@ on:
       sdk-version:
         description: 'iOS SDK versions (comma separated)'
         required: false
-        default: 'iPhoneOS13.0.sdk,iPhoneOS14.5.sdk,iPhoneOS15.4.sdk'
+        default: 'iphoneos13.0.sdk,iphoneos14.5.sdk,iphoneos15.4.sdk'  # Changed to lowercase
   push:
     branches: [main]
 
@@ -16,7 +16,8 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        sdk: ['iPhoneOS13.0.sdk', 'iPhoneOS14.5.sdk', 'iPhoneOS15.4.sdk']
+        # FIX: Use lowercase SDK names to match actual filenames
+        sdk: ['iphoneos13.0.sdk', 'iphoneos14.5.sdk', 'iphoneos15.4.sdk']
       fail-fast: false
       max-parallel: 3
 
@@ -28,7 +29,6 @@ jobs:
       uses: actions/cache@v3
       with:
         path: ~/theos
-        # Add explicit key instead of hashFiles
         key: ${{ runner.os }}-theos-${{ matrix.sdk }}
 
     - name: Set up Theos and SDKs
@@ -45,7 +45,7 @@ jobs:
         
         mkdir -p "${HOME}/theos/sdks"
         
-        # Use direct download URL with proper case handling
+        # FIX: Use lowercase SDK name consistently
         SDK_NAME="${{ matrix.sdk }}"
         SDK_URL="https://github.com/theos/sdks/raw/master/${SDK_NAME}.tar.xz"
         
@@ -66,7 +66,7 @@ jobs:
         tar -xf "${SDK_NAME}.tar.xz" -C "${HOME}/theos/sdks"
         rm "${SDK_NAME}.tar.xz"
         
-        # Verify extraction
+        # FIX: Verify using lowercase path
         [ -d "${HOME}/theos/sdks/${{ matrix.sdk }}" ] || { 
           echo "❌ SDK ${{ matrix.sdk }} not found after extraction!";
           echo "Contents of sdks directory:";
@@ -86,6 +86,7 @@ jobs:
 
     - name: Build for ${{ matrix.sdk }}
       run: |
+        # FIX: Use lowercase SDK path
         export SDKROOT="${THEOS}/sdks/${{ matrix.sdk }}"
         export ARCHS=arm64
         export TARGET=iphone:clang:latest:13.0
@@ -93,7 +94,6 @@ jobs:
         # Fix Makefile paths
         find . -name Makefile -exec sed -i "s|theos/makefiles|${THEOS}/makefiles|g" {} \;
         
-        # FIXED: Remove trailing underscores from directory names
         cd SimulateTouch
         echo "PACKAGE_VERSION = 1.0" > Makefile.common
         make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
@@ -105,7 +105,6 @@ jobs:
         # Prepare artifacts
         cd ..
         mkdir -p artifacts
-        # FIXED: Remove underscores from paths
         cp SimulateTouch/packages/*.deb artifacts/
         cp SimulateTouchApp/packages/*.deb artifacts/
         
@@ -116,6 +115,7 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
+        # FIX: Update artifact name to match SDK case
         name: IOS13-SimulateTouch-${{ matrix.sdk }}
         path: artifacts/*.deb
 
