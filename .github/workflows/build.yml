@@ -24,7 +24,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        path: 'IOS13-SimulateTouch'
+        path: 'src'  # Changed to avoid nesting conflict
 
     - name: Cache Theos
       id: cache-theos
@@ -41,28 +41,22 @@ jobs:
                                fakeroot dpkg-dev libncurses5-dev zlib1g-dev unzip \
                                automake libtool pkg-config coreutils xz-utils
         
-        # Install Theos with proper directory structure
         git clone --depth=1 https://github.com/theos/theos.git "${HOME}/theos"
         
-        # Verify Theos installation
         [ -f "${HOME}/theos/makefiles/package.mk" ] || { echo "❌ Theos installation failed!"; exit 1; }
         
-        # Download and extract SDKs
         mkdir -p "${HOME}/theos/sdks"
         curl -LO https://github.com/theos/sdks/archive/refs/heads/master.zip
         unzip -q master.zip -d sdks-temp
         
-        # Extract all SDK archives
         find sdks-temp -name '*.sdk.tar.xz' -exec sh -c '
           f="$1"
           xz -d "$f"
           tar -xf "${f%.xz}" -C "${HOME}/theos/sdks"
         ' sh {} \;
         
-        # Cleanup
         rm -rf sdks-temp master.zip
         
-        # Install ldid
         curl -LO https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64
         chmod +x ldid_linux_x86_64
         sudo mv ldid_linux_x86_64 /usr/local/bin/ldid
@@ -71,23 +65,25 @@ jobs:
       run: |
         echo "THEOS=${HOME}/theos" >> $GITHUB_ENV
         echo "${HOME}/theos/bin" >> $GITHUB_PATH
-        
-        # Set THEOS_MAKE_PATH for proper .mk file resolution
         echo "THEOS_MAKE_PATH=${HOME}/theos/makefiles" >> $GITHUB_ENV
 
-    - name: Create Theos project files
+    - name: Prepare project
       run: |
-        cd IOS13-SimulateTouch
+        # Create workspace directory
+        mkdir -p workspace
+        mv src/* workspace/
+        cd workspace
         touch .theos
         echo "THEOS_PROJECT_DIR = $(pwd)" > Makefile
 
     - name: Build for ${{ matrix.sdk }}
       run: |
-        cd IOS13-SimulateTouch
+        cd workspace
         export SDKROOT="${THEOS}/sdks/${{ matrix.sdk }}"
         export ARCHS=arm64
         export TARGET=iphone:clang:latest:13.0
         
+        # Fix Makefile paths
         find . -name Makefile -exec sed -i "s|theos/makefiles|${THEOS}/makefiles|g" {} \;
         
         # Build tweak
@@ -102,19 +98,20 @@ jobs:
         
         # Prepare artifacts
         cd ../..
-        mkdir -p packages
-        cp IOS13-SimulateTouch/SimulateTouch/packages/*.deb packages/
-        cp IOS13-SimulateTouch/SimulateTouchApp/packages/*.deb packages/
+        mkdir -p artifacts
+        cp workspace/SimulateTouch/packages/*.deb artifacts/
+        cp workspace/SimulateTouchApp/packages/*.deb artifacts/
         
-        for deb in packages/*.deb; do
+        # Rename with SDK version
+        for deb in artifacts/*.deb; do
           mv "$deb" "${deb%.deb}.${{ matrix.sdk }}.deb"
         done
-        
+
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: IOS13-SimulateTouch-${{ matrix.sdk }}
-        path: packages/*.deb
+        path: artifacts/*.deb
 
     - name: Build Summary
       if: always()
