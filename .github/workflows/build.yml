@@ -44,23 +44,27 @@ jobs:
         
         mkdir -p "${HOME}/theos/sdks"
         
-        # Download the entire sdks repository
-        curl -L -o sdks-master.tar.gz https://github.com/theos/sdks/archive/refs/heads/master.tar.gz
-        tar -xzf sdks-master.tar.gz
-        
-        # Use correct uppercase SDK names
-        SDK_NAME="${{ matrix.sdk }}"
-        if [ -d "sdks-master/$SDK_NAME" ]; then
-            cp -R "sdks-master/$SDK_NAME" "${HOME}/theos/sdks/"
+        # Download SDK repository as ZIP
+        curl -L -o sdks-master.zip https://github.com/theos/sdks/archive/refs/heads/master.zip
+        unzip -q sdks-master.zip
+
+        # Case-insensitive SDK search
+        sdk_lower=$(echo "${{ matrix.sdk }}" | tr '[:upper:]' '[:lower:]')
+        found_dir=$(find sdks-* -maxdepth 1 -type d -iname "*${sdk_lower}*" | head -n1)
+
+        if [ -n "$found_dir" ]; then
+            echo "✅ Found SDK: $found_dir"
+            cp -R "$found_dir" "${HOME}/theos/sdks/${{ matrix.sdk }}"
         else
-            echo "❌ SDK $SDK_NAME not found in repository!"
+            echo "❌ SDK ${{ matrix.sdk }} not found in repository!"
+            find sdks-* -maxdepth 1 -type d | sed 's/^/  /'  # List available SDKs
             exit 1
         fi
-        rm -rf sdks-master sdks-master.tar.gz
+        rm -rf sdks-master*
 
         # Verify extraction
-        [ -d "${HOME}/theos/sdks/$SDK_NAME" ] || { 
-          echo "❌ SDK $SDK_NAME not found after extraction!";
+        [ -d "${HOME}/theos/sdks/${{ matrix.sdk }}" ] || { 
+          echo "❌ SDK ${{ matrix.sdk }} not found after extraction!";
           exit 1;
         }
 
