@@ -1,58 +1,138 @@
-name: Build Jailbreak Tweak
+name: Build Jailbreak Tweak (Enhanced)
 
 on:
   workflow_dispatch:
+    inputs:
+      sdk-version:
+        description: 'iOS SDK version to use (comma separated)'
+        required: false
+        default: 'iPhoneOS14.5.sdk,iPhoneOS15.4.sdk'
   push:
     branches: [main]
 
 jobs:
   build:
-    runs-on: ubuntu-latest  # Theos works best on Linux
+    runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      matrix:
+        sdk: ${{ fromJSON(format('["{0}"]', join(',', split(github.event.inputs.sdk-version || 'iPhoneOS14.5.sdk,iPhoneOS15.4.sdk', ','))) }}
+      fail-fast: false
+      max-parallel: 3
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Cache Theos
+      id: cache-theos
+      uses: actions/cache@v3
+      with:
+        path: ~/theos
+        key: ${{ runner.os }}-theos-${{ hashFiles('**/Makefile') }}
+
     - name: Set up Theos
+      if: steps.cache-theos.outputs.cache-hit != 'true'
       run: |
-        # Install required dependencies
         sudo apt-get update
         sudo apt-get install -y git clang curl libxml2-dev libssl-dev python3-dev \
-                               fakeroot dpkg-dev libncurses5-dev
+                               fakeroot dpkg-dev libncurses5-dev zlib1g-dev
         
-        # Install Theos
         git clone --depth=1 https://github.com/theos/theos.git "${HOME}/theos"
-        echo "THEOS=${HOME}/theos" >> $GITHUB_ENV
         
-        # Install iOS toolchain
+        # Download SDKs
         curl -LO https://github.com/theos/sdks/archive/refs/heads/master.zip
-        unzip master.zip
+        unzip -q master.zip
+        mkdir -p "${HOME}/theos/sdks"
         mv sdks-master/*.sdk "${HOME}/theos/sdks"
         chmod -R 755 "${HOME}/theos/sdks"
+        rm -rf sdks-master master.zip
         
-        # Install ldid for fake code signing
+        # Install ldid
         curl -LO https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_macosx_x86_64
-        mv ldid_macosx_x86_64 ldid
-        chmod +x ldid
-        sudo mv ldid /usr/local/bin/
+        chmod +x ldid_macosx_x86_64
+        sudo mv ldid_macosx_x86_64 /usr/local/bin/ldid
+        
+        # Verify setup
+        ${HOME}/theos/bin/nic.pl --version
 
-    - name: Build tweak
+    - name: Build tweak for ${{ matrix.sdk }}
       run: |
-        # Set Theos environment variables
         export THEOS=${HOME}/theos
-        export SDKROOT=${THEOS}/sdks/iPhoneOS14.5.sdk
+        export SDKROOT=${THEOS}/sdks/${{ matrix.sdk }}
         export ARCHS=arm64
         export TARGET=iphone:clang:latest:13.0
         
-        # Navigate to project directory
         cd IOS13-SimulateTouch
         
-        # Build the tweak and create deb package
-        make package FINALPACKAGE=1
+        # Clean previous builds
+        make clean 2>/dev/null || true
+        
+        # Build with specific SDK
+        make package FINALPACKAGE=1 \
+          THEOS_PACKAGE_SCHEME=rootless \
+          THEOS_PLATFORM_SDK_ROOT=$SDKROOT
+        
+        # Rename output with SDK version
+        for deb in packages/*.deb; do
+          new_name=$(echo $deb | sed "s/_iphoneos-arm/.${{ matrix.sdk }}&/")
+          mv "$deb" "$new_name"
+        done
 
-    - name: Upload artifact
-      uses: actions/upload-artifact@v3
+    - name: Upload artifact (${{ matrix.sdk }})
+      uses: actions/upload-artifact@v4
       with:
-        name: IOS13-SimulateTouch.deb
-        path: IOS13-SimulateTouch/packages/*.deb
+        name: IOS13-SimulateTouch-${{ matrix.sdk }}
+        path: IOS13-SimulateTouch/packages/*${{ matrix.sdk }}*.deb
+
+    - name: Notify on failure
+      if: failure()
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const { owner, repo } = context.repo;
+          const runId = context.runId;
+          const workflow = context.workflow;
+          const sdk = '${{ matrix.sdk }}';
+          
+          github.rest.issues.createComment({
+            owner: owner,
+            repo: repo,
+            issue_number: context.payload.pull_request?.number || 0,
+            body: `❌ Build failed for SDK: ${sdk}\n` +
+                  `Workflow: ${workflow}\n` +
+                  `Run: https://github.com/${owner}/${repo}/actions/runs/${runId}`
+          });
+          
+          // Uncomment to send email notification (requires SMTP secret)
+          /*
+          const nodemailer = require('nodemailer');
+          const transporter = nodemailer.createTransport({
+            host: '${{ secrets.SMTP_HOST }}',
+            port: ${{ secrets.SMTP_PORT || 587 }},
+            secure: ${{ secrets.SMTP_SECURE || false }},
+            auth: {
+              user: '${{ secrets.SMTP_USER }}',
+              pass: '${{ secrets.SMTP_PASSWORD }}'
+            }
+          });
+          
+          await transporter.sendMail({
+            from: '${{ secrets.SMTP_FROM }}',
+            to: '${{ secrets.NOTIFY_EMAIL }}',
+            subject: `Build Failed: ${workflow} (${sdk})`,
+            text: `Build failed for ${workflow} using SDK ${sdk}\n` +
+                  `View details: https://github.com/${owner}/${repo}/actions/runs/${runId}`
+          });
+          */
+
+# Optional: Add a summary report
+    - name: Build Summary
+      if: always()
+      run: |
+        echo "### Build Summary" >> $GITHUB_STEP_SUMMARY
+        echo "| SDK | Status | Artifact |" >> $GITHUB_STEP_SUMMARY
+        echo "|-----|--------|----------|" >> $GITHUB_STEP_SUMMARY
+        echo "| ${{ matrix.sdk }} | ${{ job.status }} | [Download](${{ steps.upload-artifact.outputs.artifact-url }}) |" >> $GITHUB_STEP_SUMMARY
+      env:
+        ARTIFACT_URL: ${{ steps.upload-artifact.outputs.artifact-url }}
