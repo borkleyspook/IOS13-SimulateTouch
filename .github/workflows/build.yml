@@ -83,8 +83,8 @@ jobs:
         
         cd IOS13-SimulateTouch
         
-        # Fix makefile reference
-        sed -i "s|/aggregate.mk|$(THEOS)/makefiles/aggregate.mk|" Makefile
+        # FIXED: Use ${THEOS} instead of $(THEOS)
+        sed -i "s|/aggregate.mk|${THEOS}/makefiles/aggregate.mk|" Makefile
         
         make clean
         
