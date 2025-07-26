@@ -21,33 +21,11 @@ jobs:
       max-parallel: 3
 
     steps:
-    - name: Checkout code with submodules
+    - name: Checkout code
       uses: actions/checkout@v4
       with:
         path: 'IOS13-SimulateTouch'
         submodules: 'recursive'
-        fetch-depth: 0
-
-    - name: Verify submodule initialization
-      run: |
-        echo "Verifying libplist submodule..."
-        cd IOS13-SimulateTouch
-        git submodule status --recursive
-        ls -la libplist || echo "libplist not found - attempting repair"
-        
-        # Repair submodule if needed
-        if [ ! -d "libplist" ]; then
-          echo "Reinitializing missing submodule..."
-          git submodule deinit -f .
-          git submodule update --init --recursive --force
-        fi
-
-    - name: Debug - Show directory structure
-      run: |
-        echo "Project directory:"
-        ls -la IOS13-SimulateTouch/
-        echo "libplist submodule contents:"
-        ls -la IOS13-SimulateTouch/libplist/
 
     - name: Cache Theos
       id: cache-theos
@@ -90,32 +68,12 @@ jobs:
         chmod +x ldid_linux_x86_64
         sudo mv ldid_linux_x86_64 /usr/local/bin/ldid
 
-    - name: Build libplist for ${{ matrix.sdk }}
-      run: |
-        export THEOS="${HOME}/theos"
-        export SDKROOT="${THEOS}/sdks/${{ matrix.sdk }}"
-        
-        cd IOS13-SimulateTouch/libplist
-        chmod +x autogen.sh
-        
-        ./autogen.sh
-        ./configure --host=arm-apple-darwin --prefix="$PWD/install" \
-          CC="clang -isysroot $SDKROOT -arch arm64 -arch arm64e" \
-          CXX="clang++ -isysroot $SDKROOT -arch arm64 -arch arm64e"
-        make
-        make install
-        
-        echo "LIBPLIST_INCLUDE=$(pwd)/install/include" >> $GITHUB_ENV
-        echo "LIBPLIST_LIB=$(pwd)/install/lib" >> $GITHUB_ENV
-
     - name: Build tweak for ${{ matrix.sdk }}
       run: |
         export THEOS="${HOME}/theos"
         export SDKROOT="${THEOS}/sdks/${{ matrix.sdk }}"
         export ARCHS=arm64
         export TARGET=iphone:clang:latest:13.0
-        export TARGET_CFLAGS="-I$LIBPLIST_INCLUDE"
-        export TARGET_LDFLAGS="-L$LIBPLIST_LIB -lplist"
         
         cd IOS13-SimulateTouch
         make clean
