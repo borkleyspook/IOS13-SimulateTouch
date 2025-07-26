@@ -75,23 +75,37 @@ jobs:
         # Set THEOS_MAKE_PATH for proper .mk file resolution
         echo "THEOS_MAKE_PATH=${HOME}/theos/makefiles" >> $GITHUB_ENV
 
-    - name: Build tweak for ${{ matrix.sdk }}
+    - name: Create Theos project files
       run: |
+        cd IOS13-SimulateTouch
+        touch .theos
+        echo "THEOS_PROJECT_DIR = $(pwd)" > Makefile
+
+    - name: Build for ${{ matrix.sdk }}
+      run: |
+        cd IOS13-SimulateTouch
         export SDKROOT="${THEOS}/sdks/${{ matrix.sdk }}"
         export ARCHS=arm64
         export TARGET=iphone:clang:latest:13.0
         
-        cd IOS13-SimulateTouch
+        find . -name Makefile -exec sed -i "s|theos/makefiles|${THEOS}/makefiles|g" {} \;
         
-        # Fix both include paths
-        sed -i "s|theos/makefiles/common.mk|${THEOS}/makefiles/common.mk|" Makefile
-        sed -i "s|/aggregate.mk|${THEOS}/makefiles/aggregate.mk|" Makefile
-        
-        # Rest of the steps unchanged...
-        touch .theos
+        # Build tweak
+        cd SimulateTouch
         echo "PACKAGE_VERSION = 1.0" > Makefile.common
-        echo "THEOS_PROJECT_DIR = $(pwd)" >> Makefile
         make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+        
+        # Build app
+        cd ../SimulateTouchApp
+        echo "PACKAGE_VERSION = 1.0" > Makefile.common
+        make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+        
+        # Prepare artifacts
+        cd ../..
+        mkdir -p packages
+        cp IOS13-SimulateTouch/SimulateTouch/packages/*.deb packages/
+        cp IOS13-SimulateTouch/SimulateTouchApp/packages/*.deb packages/
+        
         for deb in packages/*.deb; do
           mv "$deb" "${deb%.deb}.${{ matrix.sdk }}.deb"
         done
@@ -100,7 +114,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: IOS13-SimulateTouch-${{ matrix.sdk }}
-        path: IOS13-SimulateTouch/packages/*${{ matrix.sdk }}*.deb
+        path: packages/*.deb
 
     - name: Build Summary
       if: always()
