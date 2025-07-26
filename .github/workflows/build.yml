@@ -77,13 +77,9 @@ jobs:
 
         # Fixed toolchain installation - use gzip format
         mkdir -p "${HOME}/theos/toolchain"
-        curl -L -o toolchain.tar.gz https://github.com/theos/toolchain/releases/download/v0.4/linux-iphone-darwin-arm64e.tar.gz
+        curl -L -o toolchain.tar.gz https://github.com/theos/toolchain/releases/download/v0.4/linux-iphone-arm64e.tar.gz
         tar -xzf toolchain.tar.gz -C "${HOME}/theos/toolchain"
         rm toolchain.tar.gz
-
-        # After downloading toolchain
-        file toolchain.tar.gz
-        ls -lh toolchain.tar.gz
 
         # Set permissions
         chmod -R 755 "${HOME}/theos"
