@@ -117,6 +117,7 @@ jobs:
       run: |
         export SDKROOT="${THEOS}/sdks/${{ matrix.sdk }}"
         export ARCHS=arm64
+        export FW_MAKEDIR="${THEOS}/makefiles"  # Explicitly set this
         
         # Set target based on SDK version
         if [[ "${{ matrix.sdk }}" == *"13."* ]]; then
@@ -125,12 +126,13 @@ jobs:
           export TARGET=iphone:clang:latest:13.0
         fi
         
-        # Update Makefiles to use correct Theos path
+        # Update Makefiles to use correct paths
         find . -name Makefile -exec sed -i \
+            -e "s|/opt/theos|${THEOS}|g" \
             -e "s|theos/makefiles|${THEOS}/makefiles|g" \
-            -e "s|\$(THEOS)/makefiles|${THEOS}/makefiles|g" {} \;
-
-        # Build all subprojects from root WITH THEOS EXPLICITLY PASSED
+            -e "s|\$(FW_MAKEDIR)/aggregate\.mk|\$(THEOS)/makefiles/aggregate.mk|g" {} \;
+        
+        # Build with explicit paths
         make clean THEOS="${THEOS}"
         make package FINALPACKAGE=1 THEOS="${THEOS}" THEOS_PACKAGE_SCHEME=rootless
         
