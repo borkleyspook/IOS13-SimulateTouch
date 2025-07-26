@@ -16,11 +16,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        sdk: ${{ github.event.inputs.sdk-version || 'iPhoneOS13.0.sdk,iPhoneOS14.5.sdk,iPhoneOS15.4.sdk' }}
-        include:
-          - sdk: iPhoneOS13.0.sdk
-          - sdk: iPhoneOS14.5.sdk
-          - sdk: iPhoneOS15.4.sdk
+        sdk: ['iPhoneOS13.0.sdk', 'iPhoneOS14.5.sdk', 'iPhoneOS15.4.sdk']
       fail-fast: false
       max-parallel: 3
 
@@ -51,7 +47,7 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y git clang curl libxml2-dev libssl-dev python3-dev \
                                fakeroot dpkg-dev libncurses5-dev zlib1g-dev unzip \
-                               automake libtool pkg-config coreutils
+                               automake libtool pkg-config coreutils xz-utils
         
         # Install Theos
         git clone --depth=1 https://github.com/theos/theos.git "${HOME}/theos"
@@ -59,7 +55,7 @@ jobs:
         # Verify Theos installation
         [ -f "${HOME}/theos/makefiles/package.mk" ] || { echo "❌ Theos installation failed!"; exit 1; }
         
-        # Download SDKs
+        # Download and extract SDKs
         mkdir -p "${HOME}/theos/sdks"
         curl -LO https://github.com/theos/sdks/archive/refs/heads/master.zip
         unzip -q master.zip -d sdks-temp
@@ -71,6 +67,7 @@ jobs:
           tar -xf "${f%.xz}" -C "${HOME}/theos/sdks"
         ' sh {} \;
         
+        # Cleanup
         rm -rf sdks-temp master.zip
         
         # Install ldid
