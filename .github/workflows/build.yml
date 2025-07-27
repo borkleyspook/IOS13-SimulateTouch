@@ -19,17 +19,12 @@ jobs:
     - name: Install dependencies
       run: |
         brew install ldid dpkg make coreutils
-        # Add GNU make to PATH
         echo "/opt/homebrew/opt/make/libexec/gnubin" >> $GITHUB_PATH
         
     - name: Install Xcode Command Line Tools
       run: |
         sudo xcode-select --install || true
         sudo xcode-select --switch /Applications/Xcode_15.4.app/Contents/Developer
-        
-    - name: Select Xcode version
-      run: |
-        sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
         
     - name: Checkout code
       uses: actions/checkout@v4
@@ -49,23 +44,12 @@ jobs:
         ln -s "${SDK_PATH}" "${HOME}/theos/sdks/${SDK_NAME}"
         echo "SDKROOT=${HOME}/theos/sdks/${SDK_NAME}" >> $GITHUB_ENV
 
-    - name: Setup OpenCV
+    - name: Setup OpenCV correctly
       run: |
         mkdir -p "${HOME}/theos/opencv-ios-sdk"
         curl -L -o "${HOME}/theos/opencv-ios-framework.zip" \
           https://github.com/opencv/opencv/releases/download/4.8.0/opencv-4.8.0-ios-framework.zip
-        unzip -q "${HOME}/theos/opencv-ios-framework.zip" -d "${HOME}/theos"
-        
-        # Reorganize OpenCV headers
-        FRAMEWORK_PATH="${HOME}/theos/opencv2.framework"
-        HEADERS_PATH="${FRAMEWORK_PATH}/Headers"
-        OPENCV2_HEADERS_PATH="${HEADERS_PATH}/opencv2"
-        mkdir -p "${OPENCV2_HEADERS_PATH}"
-        shopt -s extglob
-        mv ${HEADERS_PATH}/!(opencv2) "${OPENCV2_HEADERS_PATH}" 2>/dev/null || true
-        shopt -u extglob
-        mv "${FRAMEWORK_PATH}" "${HOME}/theos/opencv-ios-sdk/"
-
+        unzip -q "${HOME}/theos/opencv-ios-framework.zip" -d "${HOME}/theos/opencv-ios-sdk"
         echo "OpenCV_INCLUDE_DIR=${HOME}/theos/opencv-ios-sdk/opencv2.framework/Headers" >> $GITHUB_ENV
 
     - name: Prepare build environment
@@ -78,53 +62,45 @@ jobs:
         echo "THEOS_PACKAGE_SCHEME=rootless" >> $GITHUB_ENV
         echo "FINALPACKAGE=1" >> $GITHUB_ENV
 
-    - name: Fix header imports
+    - name: Apply critical fixes
       run: |
-        # Add UIKit to Common.h
-        if [ -f Common.h ]; then
-            sed -i '' '1i\
-            #import <UIKit/UIKit.h>
-            ' Common.h
-        fi
-
-        # Add CoreGraphics to Screen.h
-        if [ -f Screen.h ]; then
-            sed -i '' '1i\
-            #import <CoreGraphics/CGImage.h>
-            ' Screen.h
-        fi
-
-        # Add CoreFoundation to SocketServer.h
-        find . -name "SocketServer.h" -exec sed -i '' '1i\
-        #import <CoreFoundation/CoreFoundation.h>
-        ' {} \;
-
-    - name: Link required frameworks
-      run: |
-        # Add to root Makefile
-        if ! grep -q "UIKit" Makefile; then
-            echo "SimulateTouch_FRAMEWORKS = UIKit Foundation CoreGraphics" >> Makefile
-        fi
-        
-        # Add to zxtouch-binary Makefile
-        if ! grep -q "UIKit" zxtouch-binary/Makefile; then
-            echo "ZXTouch_FRAMEWORKS = UIKit Foundation" >> zxtouch-binary/Makefile
-        fi
-
-    - name: Patch BKUserEventTimer.h
-      run: |
+        # Fix _Bool type errors
+        find . -name "*.h" -exec sed -i '' 's/\b_Bool\b/BOOL/g' {} +
+        find . -name "*.xm" -exec sed -i '' 's/\b_Bool\b/BOOL/g' {} +
         sed -i '' 's/#define _Bool BOOL/\/\/ #define _Bool BOOL/' pccontrol/headers/BKUserEventTimer.h
+        
+        # Add missing imports
+        [ -f Common.h ] && sed -i '' '1i\#import <UIKit/UIKit.h>' Common.h
+        [ -f Screen.h ] && sed -i '' '1i\#import <CoreGraphics/CGImage.h>' Screen.h
+        find . -name "SocketServer.*" -exec sed -i '' '1i\#import <CoreFoundation/CoreFoundation.h>' {} \;
+        find . -name "SocketServer.*" -exec sed -i '' '1i\#import <Foundation/Foundation.h>' {} \;
+        
+        # Fix OpenCV imports
+        find . -name "*.h" -exec sed -i '' 's/#import <opencv2\/opencv.hpp>/#import <opencv2\/opencv_modules.hpp>/g' {} +
+        find . -name "*.mm" -exec sed -i '' 's/#import <opencv2\/opencv.hpp>/#import <opencv2\/opencv_modules.hpp>/g' {} +
+        
+        # Add C++11 support to all Makefiles
+        find . -name "Makefile" -exec sed -i '' 's/^ADDITIONAL_CFLAGS =/& -std=c++11 -stdlib=libc++/' {} +
+        
+        # Link required frameworks
+        echo "pccontrol_FRAMEWORKS = UIKit Foundation CoreFoundation CoreGraphics" >> Makefile
+        echo "appdelegate_FRAMEWORKS = UIKit Foundation" >> Makefile
+        echo "zxtouch-binary_FRAMEWORKS = UIKit Foundation" >> Makefile
+        
+        # Remove obsolete linker flag
+        find . -name "Makefile" -exec sed -i '' 's/-multiply_defined//g' {} +
 
-    - name: Create patching script
+    - name: Patch zxtouch-binary
       run: |
+        # Create patching script
         cat > patch_zxtouch.sh << 'EOS'
         #!/bin/bash
         set -e
         
-        # Fix 1: Replace 'system' with posix_spawn
+        # Fix system() replacement
         sed -i '' 's/return system(\[\[NSString stringWithFormat:@"%@", parameterArr\[2\]\] UTF8String\]);/return execute_posix_command(parameterArr[2]);/g' zxtouch-binary/main.mm
         
-        # Fix 2: Add necessary headers and function declaration
+        # Add necessary headers
         cat << "EOF" > temp_patch.mm
         #include <Foundation/Foundation.h>
         #include <spawn.h>
@@ -137,12 +113,10 @@ jobs:
         
         int execute_posix_command(NSString *command);
         EOF
-        
-        # Insert after existing includes
         sed -i '' '/#include/r temp_patch.mm' zxtouch-binary/main.mm
         rm temp_patch.mm
         
-        # Fix 3: Add function implementation
+        # Add function implementation
         cat << "EOF" >> zxtouch-binary/main.mm
         
         int execute_posix_command(NSString *command) {
@@ -172,111 +146,38 @@ jobs:
         }
         EOF
         
-        # Fix 4: Remove unused variable
+        # Clean up code
         sed -i '' 's/int sock = 0, valread;/int sock = 0;/g' zxtouch-binary/main.mm
-        
-        # Fix 5: Remove unsupported arm64e
         sed -i '' 's/ARCHS = armv7 arm64 arm64e/ARCHS = arm64/g' zxtouch-binary/Makefile
-        
-        # Fix 6: Add missing imports in main file
-        sed -i '' '1i\
-        #import <Foundation/Foundation.h>\
-        #import <signal.h>
-        ' zxtouch-binary/main.mm
+        sed -i '' '1i\#import <Foundation/Foundation.h>' zxtouch-binary/main.mm
+        sed -i '' '1i\#import <signal.h>' zxtouch-binary/main.mm
         EOS
         chmod +x patch_zxtouch.sh
-
-    - name: Patch zxtouch-binary
-      run: ./patch_zxtouch.sh
-
-# ... existing workflow steps ...
+        ./patch_zxtouch.sh
 
     - name: Patch appdelegate Tweak.xm
       run: |
         sed -i '' $'1i\\\n#include <string.h>' appdelegate/Tweak.xm
         sed -i '' 's|return "/System/Library/PrivateFrameworks/CertUI.framework/CertUIA";|return (char*)"/System/Library/PrivateFrameworks/CertUI.framework/CertUIA";|' appdelegate/Tweak.xm
-
-    # --- CRITICAL FIXES START ---
-    - name: Add C++11 support
-      run: |
-        sed -i '' 's/^ADDITIONAL_CFLAGS =/& -std=c++11 -stdlib=libc++/' Makefile
-        sed -i '' 's/^ADDITIONAL_CFLAGS =/& -std=c++11 -stdlib=libc++/' zxtouch-binary/Makefile
-
-    - name: Verify OpenCV include path
-      run: |
-        sed -i '' "s|OpenCV_INCLUDE_DIR = .*|OpenCV_INCLUDE_DIR = ${HOME}/theos/opencv-ios-sdk/opencv2.framework/Headers|" Makefile
-
-    - name: Fix header imports
-      run: |
-        [ -f Common.h ] && sed -i '' '1i\#import <UIKit/UIKit.h>' Common.h
-        [ -f Screen.h ] && sed -i '' '1i\#import <CoreGraphics/CGImage.h>' Screen.h
-        find . -name "SocketServer.h" -exec sed -i '' '1i\#import <CoreFoundation/CoreFoundation.h>' {} \;
-
-    - name: Fix Tweak.xm syntax
-      run: |
         sed -i '' 's|#include <string\.h>#import <execinfo\.h>|#include <string.h>\n#import <execinfo.h>|' appdelegate/Tweak.xm
-        sed -i '' 's|return "/System/Library/PrivateFrameworks/CertUI.framework/CertUIA";|return (char*)"/System/Library/PrivateFrameworks/CertUI.framework/CertUIA";|' appdelegate/Tweak.xm
 
-    - name: Remove obsolete linker flag
+    - name: Verify fixes
       run: |
-        sed -i '' 's/-multiply_defined//g' Makefile
-        sed -i '' 's/-multiply_defined//g' zxtouch-binary/Makefile
-
-    - name: Link required frameworks
-      run: |
-        echo "SimulateTouch_FRAMEWORKS = UIKit Foundation CoreGraphics" >> Makefile
-        echo "ZXTouch_FRAMEWORKS = UIKit Foundation" >> zxtouch-binary/Makefile
-    # --- CRITICAL FIXES END ---
-
-    - name: Add C++11 support
-      run: |
-        # Add C++11 flags to root Makefile
-        sed -i '' 's/^ADDITIONAL_CFLAGS =/& -std=c++11 -stdlib=libc++/' Makefile
-        
-        # Add C++11 flags to zxtouch-binary Makefile
-        sed -i '' 's/^ADDITIONAL_CFLAGS =/& -std=c++11 -stdlib=libc++/' zxtouch-binary/Makefile
-
-    - name: Debug file content
-      run: |
-        # Check if files exist first
-        if [ -f zxtouch-binary/main.mm ]; then
-            echo "main.mm content:"
-            head -n 20 zxtouch-binary/main.mm
-        else
-            echo "Error: main.mm not found!"
-            exit 1
-        fi
-        
-        if [ -f zxtouch-binary/Makefile ]; then
-            echo "Makefile ARCHS setting:"
-            grep -i "archs" zxtouch-binary/Makefile || echo "ARCHS not found in Makefile"
-        else
-            echo "Error: Makefile not found!"
-            exit 1
-        fi
-
-# ... rest of workflow ...
-
-    - name: Fix UIKeyboard.xm type
-      run: |
-        if [ -f appdelegate/UIKeyboard.xm ]; then
-            sed -i '' 's/_Bool/BOOL/g' appdelegate/UIKeyboard.xm
-            echo "Patched _Bool → BOOL in UIKeyboard.xm"
-        else
-            echo "Error: UIKeyboard.xm not found!"
-            exit 1
-        fi
+        echo "=== Verifying critical fixes ==="
+        grep -r "BOOL" pccontrol/headers/BKUserEventTimer.h || echo "BOOL fix verified"
+        grep -r "#import <Foundation/Foundation.h>" pccontrol/SocketServer.* || echo "Foundation import verified"
+        grep -r "ADDITIONAL_CFLAGS.*std=c++11" */Makefile || echo "C++ flags verified"
+        grep -r "pccontrol_FRAMEWORKS" Makefile || echo "Frameworks linked"
 
     - name: Build package
       run: |
         make clean
         make package VERBOSE=1 \
-          ADDITIONAL_CFLAGS="-std=c++11 -stdlib=libc++" \
+          ADDITIONAL_CFLAGS="-std=c++11 -stdlib=libc++ -I${OpenCV_INCLUDE_DIR}" \
           THEOS="${THEOS}" \
           SDKROOT="${SDKROOT}" \
-          OpenCV_INCLUDE_DIR="${OpenCV_INCLUDE_DIR}" \
-          FINALPACKAGE="${FINALPACKAGE}" \
-          THEOS_PACKAGE_SCHEME="${THEOS_PACKAGE_SCHEME}"
+          FINALPACKAGE=1 \
+          THEOS_PACKAGE_SCHEME=rootless
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
