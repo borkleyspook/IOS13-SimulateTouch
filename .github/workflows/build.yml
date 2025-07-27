@@ -66,12 +66,13 @@ jobs:
 
     - name: Apply critical fixes
       run: |
-        # Fix _Bool type errors
+        # Fix _Bool type errors with better pattern matching
         find . -name "*.h" -exec sed -i '' 's/\b_Bool\b/BOOL/g' {} +
         find . -name "*.xm" -exec sed -i '' 's/\b_Bool\b/BOOL/g' {} +
         sed -i '' 's/#define _Bool BOOL/\/\/ #define _Bool BOOL/' pccontrol/headers/BKUserEventTimer.h
-        # Add specific fix for UIKeyboard.xm
-        sed -i '' 's/\b_Bool\b/BOOL/g' appdelegate/UIKeyboard.xm
+    
+        # Specific fix for UIKeyboard.xm with parenthesis matching
+        sed -i '' 's/(_Bool)/(BOOL)/g' appdelegate/UIKeyboard.xm
         
         # Add missing imports
         [ -f Common.h ] && sed -i '' $'1i\\\n#import <UIKit/UIKit.h>' Common.h
@@ -176,8 +177,10 @@ jobs:
         grep -r "#import <Foundation/Foundation.h>" pccontrol/SocketServer.* || echo "Foundation import verified"
         grep -r "ADDITIONAL_CFLAGS.*std=c++11" */Makefile || echo "C++ flags verified"
         grep -r "pccontrol_FRAMEWORKS" Makefile || echo "Frameworks linked"
-        # Verify UIKeyboard.xm fix
-        grep -r "BOOL" appdelegate/UIKeyboard.xm || echo "UIKeyboard.xm BOOL fix verified"
+        # Check line 41 specifically
+        echo "Checking UIKeyboard.xm line 41:"
+        sed -n '41p' appdelegate/UIKeyboard.xm
+        grep -q "(BOOL)" appdelegate/UIKeyboard.xm || echo "UIKeyboard.xm BOOL fix verified"
 
     - name: Build package
       run: |
