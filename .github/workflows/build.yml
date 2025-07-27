@@ -78,6 +78,39 @@ jobs:
         echo "THEOS_PACKAGE_SCHEME=rootless" >> $GITHUB_ENV
         echo "FINALPACKAGE=1" >> $GITHUB_ENV
 
+    - name: Fix header imports
+      run: |
+        # Add UIKit to Common.h
+        if [ -f Common.h ]; then
+            sed -i '' '1i\
+            #import <UIKit/UIKit.h>
+            ' Common.h
+        fi
+
+        # Add CoreGraphics to Screen.h
+        if [ -f Screen.h ]; then
+            sed -i '' '1i\
+            #import <CoreGraphics/CGImage.h>
+            ' Screen.h
+        fi
+
+        # Add CoreFoundation to SocketServer.h
+        find . -name "SocketServer.h" -exec sed -i '' '1i\
+        #import <CoreFoundation/CoreFoundation.h>
+        ' {} \;
+
+    - name: Link required frameworks
+      run: |
+        # Add to root Makefile
+        if ! grep -q "UIKit" Makefile; then
+            echo "SimulateTouch_FRAMEWORKS = UIKit Foundation CoreGraphics" >> Makefile
+        fi
+        
+        # Add to zxtouch-binary Makefile
+        if ! grep -q "UIKit" zxtouch-binary/Makefile; then
+            echo "ZXTouch_FRAMEWORKS = UIKit Foundation" >> zxtouch-binary/Makefile
+        fi
+
     - name: Patch BKUserEventTimer.h
       run: |
         sed -i '' 's/#define _Bool BOOL/\/\/ #define _Bool BOOL/' pccontrol/headers/BKUserEventTimer.h
@@ -164,33 +197,44 @@ jobs:
         sed -i '' 's|return "/System/Library/PrivateFrameworks/CertUI.framework/CertUIA";|return (char*)"/System/Library/PrivateFrameworks/CertUI.framework/CertUIA";|' appdelegate/Tweak.xm
 
     # --- CRITICAL FIXES START ---
-    - name: Add C++11 support to Makefile
+    - name: Add C++11 support
       run: |
         sed -i '' 's/^ADDITIONAL_CFLAGS =/& -std=c++11 -stdlib=libc++/' Makefile
         sed -i '' 's/^ADDITIONAL_CFLAGS =/& -std=c++11 -stdlib=libc++/' zxtouch-binary/Makefile
 
     - name: Verify OpenCV include path
       run: |
-        echo "OpenCV headers exist: $(ls ${HOME}/theos/opencv-ios-sdk/opencv2.framework/Headers | wc -l) files"
         sed -i '' "s|OpenCV_INCLUDE_DIR = .*|OpenCV_INCLUDE_DIR = ${HOME}/theos/opencv-ios-sdk/opencv2.framework/Headers|" Makefile
 
-    - name: Add CoreFoundation imports
+    - name: Fix header imports
       run: |
-        find . -name "SocketServer.h" -exec sed -i '' '1i\
-        #import <CoreFoundation/CoreFoundation.h>\
-        #import <Foundation/Foundation.h>
-        ' {} \;
+        [ -f Common.h ] && sed -i '' '1i\#import <UIKit/UIKit.h>' Common.h
+        [ -f Screen.h ] && sed -i '' '1i\#import <CoreGraphics/CGImage.h>' Screen.h
+        find . -name "SocketServer.h" -exec sed -i '' '1i\#import <CoreFoundation/CoreFoundation.h>' {} \;
 
     - name: Fix Tweak.xm syntax
       run: |
-        sed -i '' 's|#include <string\.h>#import <execinfo\.h>|#include <string.h>\
-        #import <execinfo.h>|' appdelegate/Tweak.xm
+        sed -i '' 's|#include <string\.h>#import <execinfo\.h>|#include <string.h>\n#import <execinfo.h>|' appdelegate/Tweak.xm
+        sed -i '' 's|return "/System/Library/PrivateFrameworks/CertUI.framework/CertUIA";|return (char*)"/System/Library/PrivateFrameworks/CertUI.framework/CertUIA";|' appdelegate/Tweak.xm
 
     - name: Remove obsolete linker flag
       run: |
         sed -i '' 's/-multiply_defined//g' Makefile
         sed -i '' 's/-multiply_defined//g' zxtouch-binary/Makefile
+
+    - name: Link required frameworks
+      run: |
+        echo "SimulateTouch_FRAMEWORKS = UIKit Foundation CoreGraphics" >> Makefile
+        echo "ZXTouch_FRAMEWORKS = UIKit Foundation" >> zxtouch-binary/Makefile
     # --- CRITICAL FIXES END ---
+
+    - name: Add C++11 support
+      run: |
+        # Add C++11 flags to root Makefile
+        sed -i '' 's/^ADDITIONAL_CFLAGS =/& -std=c++11 -stdlib=libc++/' Makefile
+        
+        # Add C++11 flags to zxtouch-binary Makefile
+        sed -i '' 's/^ADDITIONAL_CFLAGS =/& -std=c++11 -stdlib=libc++/' zxtouch-binary/Makefile
 
     - name: Debug file content
       run: |
@@ -217,6 +261,7 @@ jobs:
       run: |
         make clean
         make package VERBOSE=1 \
+          ADDITIONAL_CFLAGS="-std=c++11 -stdlib=libc++" \
           THEOS="${THEOS}" \
           SDKROOT="${SDKROOT}" \
           OpenCV_INCLUDE_DIR="${OpenCV_INCLUDE_DIR}" \
