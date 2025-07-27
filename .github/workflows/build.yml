@@ -156,32 +156,51 @@ jobs:
     - name: Patch zxtouch-binary
       run: ./patch_zxtouch.sh
 
+# ... existing workflow steps ...
+
     - name: Patch appdelegate Tweak.xm
       run: |
-        # Add necessary include for strcmp()
         sed -i '' $'1i\\\n#include <string.h>' appdelegate/Tweak.xm
-        
-        # Fix deprecated conversion warning
         sed -i '' 's|return "/System/Library/PrivateFrameworks/CertUI.framework/CertUIA";|return (char*)"/System/Library/PrivateFrameworks/CertUI.framework/CertUIA";|' appdelegate/Tweak.xm
+
+    # --- CRITICAL FIXES START ---
+    - name: Add C++11 support to Makefile
+      run: |
+        sed -i '' 's/^ADDITIONAL_CFLAGS =/& -std=c++11 -stdlib=libc++/' Makefile
+        sed -i '' 's/^ADDITIONAL_CFLAGS =/& -std=c++11 -stdlib=libc++/' zxtouch-binary/Makefile
+
+    - name: Verify OpenCV include path
+      run: |
+        echo "OpenCV headers exist: $(ls ${HOME}/theos/opencv-ios-sdk/opencv2.framework/Headers | wc -l) files"
+        sed -i '' "s|OpenCV_INCLUDE_DIR = .*|OpenCV_INCLUDE_DIR = ${HOME}/theos/opencv-ios-sdk/opencv2.framework/Headers|" Makefile
+
+    - name: Add CoreFoundation imports
+      run: |
+        find . -name "SocketServer.h" -exec sed -i '' '1i\
+        #import <CoreFoundation/CoreFoundation.h>\
+        #import <Foundation/Foundation.h>
+        ' {} \;
+
+    - name: Fix Tweak.xm syntax
+      run: |
+        sed -i '' 's|#include <string\.h>#import <execinfo\.h>|#include <string.h>\
+        #import <execinfo.h>|' appdelegate/Tweak.xm
+
+    - name: Remove obsolete linker flag
+      run: |
+        sed -i '' 's/-multiply_defined//g' Makefile
+        sed -i '' 's/-multiply_defined//g' zxtouch-binary/Makefile
+    # --- CRITICAL FIXES END ---
 
     - name: Debug file content
       run: |
-        # Check if files exist first
-        if [ -f zxtouch-binary/main.mm ]; then
-            echo "main.mm content:"
-            head -n 20 zxtouch-binary/main.mm
-        else
-            echo "Error: main.mm not found!"
-            exit 1
-        fi
+        # ... existing debug commands ...
+        echo "=== Modified Makefile ==="
+        grep -E 'ADDITIONAL_CFLAGS|OpenCV_INCLUDE_DIR' Makefile
+        echo "=== SocketServer.h ==="
+        find . -name "SocketServer.h" -exec head -n 5 {} \;
         
-        if [ -f zxtouch-binary/Makefile ]; then
-            echo "Makefile ARCHS setting:"
-            grep -i "archs" zxtouch-binary/Makefile || echo "ARCHS not found in Makefile"
-        else
-            echo "Error: Makefile not found!"
-            exit 1
-        fi
+# ... rest of workflow ...
 
     - name: Build package
       run: |
