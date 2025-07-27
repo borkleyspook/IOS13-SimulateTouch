@@ -71,11 +71,20 @@ jobs:
 
         echo "OpenCV_INCLUDE_DIR=${HOME}/theos/opencv-ios-sdk/opencv2.framework/Headers" >> $GITHUB_ENV
 
+    - name: Verify OpenCV headers
+      run: |
+        echo "Checking OpenCV headers:"
+        ls -la "${HOME}/theos/opencv-ios-sdk/opencv2.framework/Headers"
+        [ -f "${HOME}/theos/opencv-ios-sdk/opencv2.framework/Headers/opencv2/opencv.hpp" ] || echo "❌ opencv.hpp missing!"
+
     - name: Prepare build environment
       run: |
         # Create OpenCV include directory
-        sudo mkdir -p /usr/local/include/opencv2
-        sudo ln -s "${HOME}/theos/opencv-ios-sdk/opencv2.framework/Headers/opencv2" /usr/local/include/opencv2 || true
+        sudo mkdir -p /usr/local/include
+        sudo ln -s "${HOME}/theos/opencv-ios-sdk/opencv2.framework/Headers" /usr/local/include/opencv2 || true
+        
+        # Add this line to verify symlink creation
+        ls -la /usr/local/include/opencv2
         
         # Set build parameters
         echo "TARGET=iphone:clang:13.7:9.0" >> $GITHUB_ENV
@@ -98,7 +107,7 @@ jobs:
         cat > patch_zxtouch.sh << 'EOS'
         #!/bin/bash
         set -e
-
+        
         # Fix 1: Replace 'system' with posix_spawn
         sed -i '' 's/return system(\[\[NSString stringWithFormat:@"%@", parameterArr\[2\]\] UTF8String\]);/return execute_posix_command(parameterArr[2]);/g' zxtouch-binary/main.mm
         
@@ -110,17 +119,17 @@ jobs:
         #include <string.h>
         
         extern char **environ;
-
+        
         int execute_posix_command(NSString *command);
         EOF
         
         # Insert after existing includes
         sed -i '' '/#include/r temp_patch.mm' zxtouch-binary/main.mm
         rm temp_patch.mm
-
+        
         # Fix 3: Add function implementation
         cat << "EOF" >> zxtouch-binary/main.mm
-
+        
         int execute_posix_command(NSString *command) {
             pid_t pid;
             const char *cmd = [command UTF8String];
@@ -147,16 +156,15 @@ jobs:
             return status;
         }
         EOF
-
+        
         # Fix 4: Remove unused variable
         sed -i '' 's/int sock = 0, valread;/int sock = 0;/g' zxtouch-binary/main.mm
         
         # Fix 5: Remove unsupported arm64e
         sed -i '' 's/ARCHS = armv7 arm64 arm64e/ARCHS = armv7 arm64/g' zxtouch-binary/Makefile
         EOS
-
         chmod +x patch_zxtouch.sh
-
+    
     - name: Patch zxtouch-binary
       run: ./patch_zxtouch.sh
 
