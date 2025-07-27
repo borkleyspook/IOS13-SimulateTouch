@@ -93,42 +93,60 @@ jobs:
 
     - name: Patch zxtouch-binary
       run: |
-        # Fix 1: Replace unavailable 'system' function with posix_spawn
+        # Fix 1: Replace 'system' with posix_spawn
         sed -i '' 's/return system(\[\[NSString stringWithFormat:@"%@", parameterArr\[2\]\] UTF8String\]);/return execute_posix_command(parameterArr[2]);/g' zxtouch-binary/main.mm
         
-        # Fix 2: Add posix_spawn implementation
-        cat << EOF >> zxtouch-binary/main.mm
-        
-        int execute_posix_command(NSString *command) {
-            pid_t pid;
-            const char *cmd = [command UTF8String];
-            char *const argv[] = {"sh", "-c", (char *)cmd, NULL};
-            posix_spawnattr_t attr;
-            
-            posix_spawnattr_init(&attr);
-            posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGDEF|POSIX_SPAWN_SETSIGMASK);
-            sigset_t all_signals;
-            sigfillset(&all_signals);
-            posix_spawnattr_setsigmask(&attr, &all_signals);
-            sigemptyset(&all_signals);
-            posix_spawnattr_setsigdefault(&attr, &all_signals);
-            
-            int status = posix_spawn(&pid, "/bin/sh", NULL, &attr, argv, environ);
-            if (status == 0) {
-                if (waitpid(pid, &status, 0) == -1) {
-                    perror("waitpid");
-                }
-            } else {
-                printf("posix_spawn failed: %s\n", strerror(status));
-            }
-            posix_spawnattr_destroy(&attr);
-            return status;
-        }
-        EOF
-        
-        # Fix 3: Remove unsupported arm64e architecture
-        sed -i '' 's/ARCHS = armv7 arm64 arm64e/ARCHS = armv7 arm64/g' zxtouch-binary/Makefile
+        # Fix 2: Add necessary headers and function declaration
+        cat << "EOF" > temp_patch.mm
+    #include <spawn.h>
+    #include <sys/wait.h>
+    #include <cstdio>
+    #include <cstring>
 
+    extern char **environ;
+
+    int execute_posix_command(NSString *command);
+    EOF
+        # Insert after existing includes
+        sed -i '' '/#include/r temp_patch.mm' zxtouch-binary/main.mm
+        rm temp_patch.mm
+
+        # Fix 3: Add function implementation
+        cat << "EOF" >> zxtouch-binary/main.mm
+
+    int execute_posix_command(NSString *command) {
+        pid_t pid;
+        const char *cmd = [command UTF8String];
+        char *const argv[] = {(char *)"sh", (char *)"-c", (char *)cmd, NULL};
+        posix_spawnattr_t attr;
+        
+        posix_spawnattr_init(&attr);
+        posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK);
+        sigset_t all_signals;
+        sigfillset(&all_signals);
+        posix_spawnattr_setsigmask(&attr, &all_signals);
+        sigemptyset(&all_signals);
+        posix_spawnattr_setsigdefault(&attr, &all_signals);
+        
+        int status = posix_spawn(&pid, "/bin/sh", NULL, &attr, argv, environ);
+        if (status == 0) {
+            if (waitpid(pid, &status, 0) == -1) {
+                perror("waitpid");
+            }
+        } else {
+            printf("posix_spawn failed: %s\n", strerror(status));
+        }
+        posix_spawnattr_destroy(&attr);
+        return status;
+    }
+    EOF
+
+        # Fix 4: Remove unused variable
+        sed -i '' 's/int sock = 0, valread;/int sock = 0;/g' zxtouch-binary/main.mm
+        
+        # Fix 5: Remove unsupported arm64e
+        sed -i '' 's/ARCHS = armv7 arm64 arm64e/ARCHS = armv7 arm64/g' zxtouch-binary/Makefile
+        
     - name: Build package
       run: |
         make clean
