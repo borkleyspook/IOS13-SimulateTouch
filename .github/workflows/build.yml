@@ -53,7 +53,7 @@ jobs:
       run: |
         mkdir -p "${HOME}/theos/opencv-ios-sdk"
         curl -L -o "${HOME}/theos/opencv-ios-framework.zip" \
-          https://github.com/opencv/opencv/releases/download/4.5.1/opencv-4.5.1-ios-framework.zip
+          https://github.com/opencv/opencv/releases/download/4.8.0/opencv-4.8.0-ios-framework.zip
         unzip -q "${HOME}/theos/opencv-ios-framework.zip" -d "${HOME}/theos"
         
         # Reorganize OpenCV headers
@@ -93,10 +93,12 @@ jobs:
         
         # Fix 2: Add necessary headers and function declaration
         cat << "EOF" > temp_patch.mm
+        #include <Foundation/Foundation.h>
         #include <spawn.h>
         #include <sys/wait.h>
         #include <stdio.h>
         #include <string.h>
+        #include <signal.h>
         
         extern char **environ;
         
@@ -130,7 +132,7 @@ jobs:
                     perror("waitpid");
                 }
             } else {
-                printf("posix_spawn failed: %s\n", strerror(status));
+                NSLog(@"posix_spawn failed: %s", strerror(status));
             }
             posix_spawnattr_destroy(&attr);
             return status;
@@ -141,7 +143,13 @@ jobs:
         sed -i '' 's/int sock = 0, valread;/int sock = 0;/g' zxtouch-binary/main.mm
         
         # Fix 5: Remove unsupported arm64e
-        sed -i '' 's/ARCHS = armv7 arm64 arm64e/ARCHS = armv7 arm64/g' zxtouch-binary/Makefile
+        sed -i '' 's/ARCHS = armv7 arm64 arm64e/ARCHS = arm64/g' zxtouch-binary/Makefile
+        
+        # Fix 6: Add missing imports in main file
+        sed -i '' '1i\
+        #import <Foundation/Foundation.h>\
+        #import <signal.h>
+        ' zxtouch-binary/main.mm
         EOS
         chmod +x patch_zxtouch.sh
     
@@ -156,10 +164,16 @@ jobs:
         # Fix deprecated conversion warning
         sed -i '' 's|return "/System/Library/PrivateFrameworks/CertUI.framework/CertUIA";|return (char*)"/System/Library/PrivateFrameworks/CertUI.framework/CertUIA";|' appdelegate/Tweak.xm
 
+    - name: Debug file content
+      run: |
+        head -n 20 zxtouch-binary/main.mm
+        echo "Current ARCHS:"
+        grep "ARCHS =" zxtouch-binary/Makefile
+
     - name: Build package
       run: |
         make clean
-        make package \
+        make package VERBOSE=1 \
           THEOS="${THEOS}" \
           SDKROOT="${SDKROOT}" \
           OpenCV_INCLUDE_DIR="${OpenCV_INCLUDE_DIR}" \
