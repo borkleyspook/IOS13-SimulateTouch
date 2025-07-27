@@ -166,9 +166,22 @@ jobs:
 
     - name: Debug file content
       run: |
-        head -n 20 zxtouch-binary/main.mm
-        echo "Current ARCHS:"
-        grep "ARCHS =" zxtouch-binary/Makefile
+        # Check if files exist first
+        if [ -f zxtouch-binary/main.mm ]; then
+            echo "main.mm content:"
+            head -n 20 zxtouch-binary/main.mm
+        else
+            echo "Error: main.mm not found!"
+            exit 1
+        fi
+        
+        if [ -f zxtouch-binary/Makefile ]; then
+            echo "Makefile ARCHS setting:"
+            grep -i "archs" zxtouch-binary/Makefile || echo "ARCHS not found in Makefile"
+        else
+            echo "Error: Makefile not found!"
+            exit 1
+        fi
 
     - name: Build package
       run: |
