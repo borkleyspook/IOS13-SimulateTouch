@@ -106,9 +106,9 @@ jobs:
         cat << "EOF" > temp_patch.mm
         #include <spawn.h>
         #include <sys/wait.h>
-        #include <cstdio>
-        #include <cstring>
-
+        #include <stdio.h>
+        #include <string.h>
+        
         extern char **environ;
 
         int execute_posix_command(NSString *command);
