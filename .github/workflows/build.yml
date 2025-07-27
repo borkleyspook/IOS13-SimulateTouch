@@ -29,12 +29,14 @@ jobs:
         echo "THEOS=${HOME}/theos" >> $GITHUB_ENV
         echo "${HOME}/theos/bin" >> $GITHUB_PATH
 
-    # Use Xcode's SDK instead of downloaded iOS 13.7 SDK
     - name: Set up iOS SDK
       run: |
         SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
-        echo "SDKROOT=${SDK_PATH}" >> $GITHUB_ENV
-        sudo ln -s "${SDK_PATH}" "${HOME}/theos/sdks/iPhoneOS.sdk"
+        # Create symlink with exact name Theos expects
+        SDK_NAME="iPhoneOS13.7.sdk"
+        mkdir -p "${HOME}/theos/sdks"
+        ln -s "${SDK_PATH}" "${HOME}/theos/sdks/${SDK_NAME}"
+        echo "SDKROOT=${HOME}/theos/sdks/${SDK_NAME}" >> $GITHUB_ENV
 
     - name: Setup OpenCV
       run: |
@@ -67,7 +69,6 @@ jobs:
         echo "THEOS_PACKAGE_SCHEME=rootless" >> $GITHUB_ENV
         echo "FINALPACKAGE=1" >> $GITHUB_ENV
 
-    # Fix _Bool redefinition
     - name: Patch BKUserEventTimer.h
       run: |
         sed -i '' 's/#define _Bool BOOL/\/\/ #define _Bool BOOL/' pccontrol/headers/BKUserEventTimer.h
