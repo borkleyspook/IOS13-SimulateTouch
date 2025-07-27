@@ -257,6 +257,16 @@ jobs:
 
 # ... rest of workflow ...
 
+    - name: Fix UIKeyboard.xm type
+      run: |
+        if [ -f appdelegate/UIKeyboard.xm ]; then
+            sed -i '' 's/_Bool/BOOL/g' appdelegate/UIKeyboard.xm
+            echo "Patched _Bool → BOOL in UIKeyboard.xm"
+        else
+            echo "Error: UIKeyboard.xm not found!"
+            exit 1
+        fi
+
     - name: Build package
       run: |
         make clean
