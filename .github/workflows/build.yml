@@ -21,16 +21,16 @@ jobs:
         brew install ldid dpkg make coreutils
         # Add GNU make to PATH
         echo "/opt/homebrew/opt/make/libexec/gnubin" >> $GITHUB_PATH
-
+        
     - name: Install Xcode Command Line Tools
       run: |
         sudo xcode-select --install || true
         sudo xcode-select --switch /Applications/Xcode_15.4.app/Contents/Developer
-
+        
     - name: Select Xcode version
       run: |
         sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
-
+        
     - name: Checkout code
       uses: actions/checkout@v4
 
@@ -44,7 +44,6 @@ jobs:
     - name: Set up iOS SDK
       run: |
         SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
-        # Create symlink with exact name Theos expects
         SDK_NAME="iPhoneOS13.7.sdk"
         mkdir -p "${HOME}/theos/sdks"
         ln -s "${SDK_PATH}" "${HOME}/theos/sdks/${SDK_NAME}"
@@ -71,11 +70,9 @@ jobs:
 
     - name: Prepare build environment
       run: |
-        # Create OpenCV include directory
         sudo mkdir -p /usr/local/include
         sudo ln -s "${HOME}/theos/opencv-ios-sdk/opencv2.framework/Headers" /usr/local/include/opencv2 || true
         
-        # Set build parameters
         echo "TARGET=iphone:clang:13.7:9.0" >> $GITHUB_ENV
         echo "ARCHS=arm64" >> $GITHUB_ENV
         echo "THEOS_PACKAGE_SCHEME=rootless" >> $GITHUB_ENV
@@ -150,6 +147,17 @@ jobs:
     
     - name: Patch zxtouch-binary
       run: ./patch_zxtouch.sh
+
+    # NEW STEP ADDED HERE
+    - name: Patch appdelegate Tweak.xm
+      run: |
+        # Add necessary include for strcmp()
+        sed -i '' '1i\
+#include <string.h>
+        ' appdelegate/Tweak.xm
+        
+        # Fix deprecated conversion warning
+        sed -i '' 's|return "/System/Library/PrivateFrameworks/CertUI.framework/CertUIA";|return (char*)"/System/Library/PrivateFrameworks/CertUI.framework/CertUIA";|' appdelegate/Tweak.xm
 
     - name: Build package
       run: |
