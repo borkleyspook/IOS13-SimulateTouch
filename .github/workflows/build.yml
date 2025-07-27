@@ -1,4 +1,4 @@
-name: Build Jailbreak Tweak
+name: Build Jailbreak Tweak (Rootless)
 
 on:
   workflow_dispatch:
@@ -6,190 +6,98 @@ on:
       sdk-version:
         description: 'iOS SDK versions (comma separated)'
         required: false
-        default: 'iPhoneOS13.7.sdk,iPhoneOS14.5.sdk,iPhoneOS15.6.sdk'
+        default: 'iPhoneOS13.7.sdk'
   push:
     branches: [master]
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     timeout-minutes: 30
-    strategy:
-      matrix:
-        sdk: ['iPhoneOS13.7.sdk', 'iPhoneOS14.5.sdk', 'iPhoneOS15.6.sdk']
-      fail-fast: false
-      max-parallel: 3
 
     steps:
+    - name: Install dependencies
+      run: |
+        brew install ldid dpkg make coreutils
+        
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Cache Theos
-      uses: actions/cache@v3
-      with:
-        path: |
-          ~/theos
-          ~/.cache/pip
-        key: ${{ runner.os }}-theos-${{ matrix.sdk }}-pycache
-
-    - name: Set up Theos and SDKs
-      if: steps.cache-theos.outputs.cache-hit != 'true'
+    - name: Set up Theos
       run: |
-        sudo apt-get update
-        sudo apt-get install -y git clang curl libxml2-dev libssl-dev python3-dev \
-                               fakeroot dpkg-dev libncurses5-dev zlib1g-dev unzip \
-                               automake libtool pkg-config coreutils xz-utils
-        
-        git clone --depth=1 https://github.com/theos/theos.git "${HOME}/theos"
-        
-        [ -f "${HOME}/theos/makefiles/package.mk" ] || { echo "❌ Theos installation failed!"; exit 1; }
-        
-        mkdir -p "${HOME}/theos/sdks"
-        
-        # Download SDK repository as ZIP
-        curl -L -o sdks-master.zip https://github.com/theos/sdks/archive/refs/heads/master.zip
-        unzip -q sdks-master.zip
-
-        # Case-insensitive SDK search
-        sdk_lower=$(echo "${{ matrix.sdk }}" | tr '[:upper:]' '[:lower:]')
-        found_dir=$(find sdks-* -maxdepth 1 -type d -iname "*${sdk_lower}*" | head -n1)
-
-        if [ -n "$found_dir" ]; then
-            echo "✅ Found SDK: $found_dir"
-            cp -R "$found_dir" "${HOME}/theos/sdks/${{ matrix.sdk }}"
-        else
-            echo "❌ SDK ${{ matrix.sdk }} not found in repository!"
-            find sdks-* -maxdepth 1 -type d | sed 's/^/  /'  # List available SDKs
-            exit 1
-        fi
-        rm -rf sdks-master*
-
-        # Verify extraction
-        [ -d "${HOME}/theos/sdks/${{ matrix.sdk }}" ] || { 
-          echo "❌ SDK ${{ matrix.sdk }} not found after extraction!";
-          exit 1;
-        }
-
-        # Install ldid for signing
-        curl -LO https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64
-        chmod +x ldid_linux_x86_64
-        sudo mv ldid_linux_x86_64 /usr/local/bin/ldid
-
-        # Fixed toolchain installation
-        mkdir -p "${HOME}/theos/toolchain"
-        curl -L -o toolchain.tar.lzma https://github.com/sbingner/llvm-project/releases/download/v10.0.0-1/linux-ios-arm64e-clang-toolchain.tar.lzma
-        xz -d toolchain.tar.lzma  # Decompress - outputs toolchain.tar
-        tar -xf toolchain.tar -C "${HOME}/theos/toolchain"
-        rm toolchain.tar  # Remove decompressed tar file
-
-        # Set permissions
-        chmod -R 755 "${HOME}/theos"
-
-        # Verify toolchain exists
-        [ -f "${HOME}/theos/toolchain/linux/iphone/bin/clang" ] || { 
-          echo "❌ Toolchain installation failed!";
-          exit 1;
-        }
-
-        # After toolchain installation
-        echo "Toolchain contents:"
-        ls -lR "${HOME}/theos/toolchain"
-        file "${HOME}/theos/toolchain/linux/iphone/bin/clang"
-
-    - name: Configure Theos environment
-      run: |
+        git clone --recursive https://github.com/theos/theos.git "${HOME}/theos"
         echo "THEOS=${HOME}/theos" >> $GITHUB_ENV
         echo "${HOME}/theos/bin" >> $GITHUB_PATH
-        echo "THEOS_MAKE_PATH=${HOME}/theos/makefiles" >> $GITHUB_ENV
 
-    # Add this to your workflow before the build step
-    - name: List repository contents
+    - name: Install iOS SDK
       run: |
-        echo "Repository structure:"
+        mkdir -p "${HOME}/theos/sdks"
+        
+        # Download SDK
+        SDK_NAME="iPhoneOS13.7.sdk"
+        curl -L -o "${HOME}/theos/sdks/${SDK_NAME}.tar.xz" \
+          https://github.com/theos/sdks/releases/download/master-146e41f/${SDK_NAME}.tar.xz
+        
+        # Extract SDK
+        tar -xJf "${HOME}/theos/sdks/${SDK_NAME}.tar.xz" -C "${HOME}/theos/sdks"
+        
+        # Verify extraction
+        [ -d "${HOME}/theos/sdks/${SDK_NAME}" ] || { 
+          echo "❌ SDK extraction failed!";
+          exit 1;
+        }
+        
+        echo "SDKROOT=${HOME}/theos/sdks/${SDK_NAME}" >> $GITHUB_ENV
+
+    - name: Setup OpenCV
+      run: |
+        mkdir -p "${HOME}/theos/opencv-ios-sdk"
+        curl -L -o "${HOME}/theos/opencv-ios-framework.zip" \
+          https://github.com/opencv/opencv/releases/download/4.5.1/opencv-4.5.1-ios-framework.zip
+        unzip -q "${HOME}/theos/opencv-ios-framework.zip" -d "${HOME}/theos"
+        
+        # Reorganize OpenCV headers for proper inclusion
+        FRAMEWORK_PATH="${HOME}/theos/opencv2.framework"
+        HEADERS_PATH="${FRAMEWORK_PATH}/Headers"
+        OPENCV2_HEADERS_PATH="${HEADERS_PATH}/opencv2"
+        
+        mkdir -p "${OPENCV2_HEADERS_PATH}"
+        mv ${HEADERS_PATH}/!(opencv2) "${OPENCV2_HEADERS_PATH}" 2>/dev/null || true
+        mv "${FRAMEWORK_PATH}" "${HOME}/theos/opencv-ios-sdk/"
+        
+        echo "OpenCV_INCLUDE_DIR=${HOME}/theos/opencv-ios-sdk/opencv2.framework/Headers" >> $GITHUB_ENV
+
+    - name: Prepare build environment
+      run: |
+        # Create symlink for OpenCV includes
+        sudo ln -s "${HOME}/theos/opencv-ios-sdk/opencv2.framework/Headers/opencv2" /usr/local/include/opencv2 || true
+        
+        # Set build parameters
+        echo "TARGET=iphone:clang:13.7:9.0" >> $GITHUB_ENV
+        echo "ARCHS=arm64" >> $GITHUB_ENV
+        echo "THEOS_PACKAGE_SCHEME=rootless" >> $GITHUB_ENV
+        echo "FINALPACKAGE=1" >> $GITHUB_ENV
+
+    - name: Verify repository structure
+      run: |
+        echo "Repository content:"
         ls -la
-        echo "Looking for buildable directories:"
-        find . -maxdepth 1 -type d ! -path . -exec sh -c 'echo "{}: $(find {} -name Makefile -o -name Makefile.common | wc -l) Makefiles found"' \;
+        [ -d "appdelegate" ] && echo "✅ appdelegate found"
+        [ -d "layout" ] && echo "✅ layout found"
+        [ -d "pccontrol" ] && echo "✅ pccontrol found"
 
-    - name: Verify directories
+    - name: Build package
       run: |
-        echo "Checking for build directories..."
-        if [ ! -d "appdelegate" ]; then
-          echo "❌ appdelegate directory missing!"
-          exit 1
-        fi
-        if [ ! -d "layout" ]; then
-          echo "❌ layout directory missing!"
-          exit 1
-        fi
-        if [ ! -d "pccontrol" ]; then
-          echo "❌ pccontrol directory missing!"
-          exit 1
-        fi
-        echo "✅ All directories present"
+        make clean
+        make package \
+          THEOS="${THEOS}" \
+          SDKROOT="${SDKROOT}" \
+          OpenCV_INCLUDE_DIR="${OpenCV_INCLUDE_DIR}" \
+          FINALPACKAGE="${FINALPACKAGE}" \
+          THEOS_PACKAGE_SCHEME="${THEOS_PACKAGE_SCHEME}"
 
-    - name: Debug Makefile
-      run: |
-        echo "THEOS value: ${THEOS}"
-        echo "Root Makefile content:"
-        cat Makefile
-        echo "Checking for aggregate.mk:"
-        ls -la "${THEOS}/makefiles/aggregate.mk"
-
-    - name: Build for ${{ matrix.sdk }}
-      run: |
-        # Add these environment variables
-        export LANG=en_US.UTF-8
-        export LC_ALL=en_US.UTF-8
-        export THEOS/bin:${PATH}
-        # Add Theos bin directory to PATH
-        export PATH="${THEOS}/bin:${PATH}"
-        export SDKROOT="${THEOS}/sdks/${{ matrix.sdk }}"
-
-        # ... existing build commands ...
-        export ARCHS=arm64
-        export FW_MAKEDIR="${THEOS}/makefiles"  # Explicitly set this
-        
-        # Dynamic target detection
-        if [[ "${{ matrix.sdk }}" =~ iPhoneOS(.*)\.sdk ]]; then
-          ios_version=${BASH_REMATCH[1]}
-          export TARGET="iphone:clang:${ios_version}:${ios_version}"
-        fi
-
-        # Set target based on SDK version
-        #if [[ "${{ matrix.sdk }}" == *"13."* ]]; then
-        #  export TARGET=iphone:clang:13.0:9.0
-        #else
-        #  export TARGET=iphone:clang:latest:13.0
-        #fi
-        
-        # Update Makefiles to use correct paths
-        find . -name Makefile -exec sed -i \
-            -e "s|/opt/theos|${THEOS}|g" \
-            -e "s|theos/makefiles|${THEOS}/makefiles|g" \
-            -e "s|\$(FW_MAKEDIR)/aggregate\.mk|\$(THEOS)/makefiles/aggregate.mk|g" {} \;
-        
-        # Build with explicit paths
-        make clean THEOS="${THEOS}"
-        make package FINALPACKAGE=1 THEOS="${THEOS}" THEOS_PACKAGE_SCHEME=rootless
-        
-        # Prepare artifacts
-        mkdir -p artifacts
-        cp packages/*.deb artifacts/
-        
-        for deb in artifacts/*.deb; do
-          mv "$deb" "${deb%.deb}.${{ matrix.sdk }}.deb"
-        done
-        
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: IOS13-SimulateTouch-${{ matrix.sdk }}
-        path: artifacts/*.deb
-        
-    - name: Build Summary
-      if: always()
-      run: |
-        echo "### 🛠️ Build Summary" >> $GITHUB_STEP_SUMMARY
-        echo "| SDK | Status | Artifact |" >> $GITHUB_STEP_SUMMARY
-        echo "|-----|--------|----------|" >> $GITHUB_STEP_SUMMARY
-        echo "| ${{ matrix.sdk }} | ${{ job.status }} | [Download](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) |" >> $GITHUB_STEP_SUMMARY
+        name: IOS13-SimulateTouch
+        path: packages/*.deb
