@@ -29,25 +29,12 @@ jobs:
         echo "THEOS=${HOME}/theos" >> $GITHUB_ENV
         echo "${HOME}/theos/bin" >> $GITHUB_PATH
 
-    - name: Install iOS SDK
+    # Use Xcode's SDK instead of downloaded iOS 13.7 SDK
+    - name: Set up iOS SDK
       run: |
-        mkdir -p "${HOME}/theos/sdks"
-        
-        # Download SDK
-        SDK_NAME="iPhoneOS13.7.sdk"
-        curl -L -o "${HOME}/theos/sdks/${SDK_NAME}.tar.xz" \
-          https://github.com/theos/sdks/releases/download/master-146e41f/${SDK_NAME}.tar.xz
-        
-        # Extract SDK
-        tar -xJf "${HOME}/theos/sdks/${SDK_NAME}.tar.xz" -C "${HOME}/theos/sdks"
-        
-        # Verify extraction
-        [ -d "${HOME}/theos/sdks/${SDK_NAME}" ] || { 
-          echo "❌ SDK extraction failed!";
-          exit 1;
-        }
-        
-        echo "SDKROOT=${HOME}/theos/sdks/${SDK_NAME}" >> $GITHUB_ENV
+        SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+        echo "SDKROOT=${SDK_PATH}" >> $GITHUB_ENV
+        sudo ln -s "${SDK_PATH}" "${HOME}/theos/sdks/iPhoneOS.sdk"
 
     - name: Setup OpenCV
       run: |
@@ -55,27 +42,18 @@ jobs:
         curl -L -o "${HOME}/theos/opencv-ios-framework.zip" \
           https://github.com/opencv/opencv/releases/download/4.5.1/opencv-4.5.1-ios-framework.zip
         unzip -q "${HOME}/theos/opencv-ios-framework.zip" -d "${HOME}/theos"
-
-        # Reorganize OpenCV headers for proper inclusion
+        
+        # Reorganize OpenCV headers
         FRAMEWORK_PATH="${HOME}/theos/opencv2.framework"
         HEADERS_PATH="${FRAMEWORK_PATH}/Headers"
         OPENCV2_HEADERS_PATH="${HEADERS_PATH}/opencv2"
-
         mkdir -p "${OPENCV2_HEADERS_PATH}"
-
         shopt -s extglob
         mv ${HEADERS_PATH}/!(opencv2) "${OPENCV2_HEADERS_PATH}" 2>/dev/null || true
         shopt -u extglob
-
         mv "${FRAMEWORK_PATH}" "${HOME}/theos/opencv-ios-sdk/"
 
         echo "OpenCV_INCLUDE_DIR=${HOME}/theos/opencv-ios-sdk/opencv2.framework/Headers" >> $GITHUB_ENV
-
-    - name: Verify OpenCV headers
-      run: |
-        echo "Checking OpenCV headers:"
-        ls -la "${HOME}/theos/opencv-ios-sdk/opencv2.framework/Headers"
-        [ -f "${HOME}/theos/opencv-ios-sdk/opencv2.framework/Headers/opencv2/opencv.hpp" ] || echo "❌ opencv.hpp missing!"
 
     - name: Prepare build environment
       run: |
@@ -83,24 +61,16 @@ jobs:
         sudo mkdir -p /usr/local/include
         sudo ln -s "${HOME}/theos/opencv-ios-sdk/opencv2.framework/Headers" /usr/local/include/opencv2 || true
         
-        # Add this line to verify symlink creation
-        ls -la /usr/local/include/opencv2
-        
         # Set build parameters
         echo "TARGET=iphone:clang:13.7:9.0" >> $GITHUB_ENV
         echo "ARCHS=arm64" >> $GITHUB_ENV
         echo "THEOS_PACKAGE_SCHEME=rootless" >> $GITHUB_ENV
         echo "FINALPACKAGE=1" >> $GITHUB_ENV
 
-    - name: Verify repository structure
+    # Fix _Bool redefinition
+    - name: Patch BKUserEventTimer.h
       run: |
-        echo "Repository content:"
-        ls -la
-        [ -d "appdelegate" ] && echo "✅ appdelegate found"
-        [ -d "layout" ] && echo "✅ layout found"
-        [ -d "pccontrol" ] && echo "✅ pccontrol found"
-
-    # ... previous steps ...
+        sed -i '' 's/#define _Bool BOOL/\/\/ #define _Bool BOOL/' pccontrol/headers/BKUserEventTimer.h
 
     - name: Create patching script
       run: |
@@ -168,7 +138,6 @@ jobs:
     - name: Patch zxtouch-binary
       run: ./patch_zxtouch.sh
 
-    # ... following steps ...
     - name: Build package
       run: |
         make clean
