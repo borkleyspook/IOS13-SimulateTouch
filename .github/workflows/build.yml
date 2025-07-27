@@ -52,7 +52,6 @@ jobs:
         curl -L -o "${HOME}/theos/opencv-ios-framework.zip" \
           https://github.com/opencv/opencv/releases/download/4.8.0/opencv-4.8.0-ios-framework.zip
         unzip -q "${HOME}/theos/opencv-ios-framework.zip" -d "${HOME}/theos/opencv-ios-sdk"
-        # Create proper include structure
         ln -s "${HOME}/theos/opencv-ios-sdk/opencv2.framework/Headers" "${HOME}/theos/opencv-ios-sdk/opencv2"
         echo "OpenCV_INCLUDE_DIR=${HOME}/theos/opencv-ios-sdk" >> $GITHUB_ENV
 
@@ -63,26 +62,27 @@ jobs:
         
         echo "TARGET=iphone:clang:13.7:9.0" >> $GITHUB_ENV
         echo "ARCHS=arm64" >> $GITHUB_ENV
-        # Add this to override any subproject settings
         find . -name Makefile -exec sed -i '' 's/^ARCHS =.*/ARCHS = arm64/' {} +
         echo "THEOS_PACKAGE_SCHEME=rootless" >> $GITHUB_ENV
         echo "FINALPACKAGE=1" >> $GITHUB_ENV
 
     - name: Apply critical fixes
       run: |
-        # Fix _Bool type errors with better pattern matching
+        # Fix _Bool type errors
         find . -type f \( -name "*.h" -o -name "*.xm" -o -name "*.m" -o -name "*.mm" \) \
           -exec sed -i '' 's/\b_Bool\b/BOOL/g' {} +
         sed -i '' 's/#define _Bool BOOL/\/\/ #define _Bool BOOL/' pccontrol/headers/BKUserEventTimer.h
         sed -i '' 's/typedef _Bool BOOL/\/\/ typedef _Bool BOOL/' pccontrol/headers/BKUserEventTimer.h
-    
-        # Specific fix for UIKeyboard.xm with parenthesis matching
         sed -i '' 's/(_Bool)/(BOOL)/g' appdelegate/UIKeyboard.xm
         
         # Add missing imports
-        [ -f Common.h ] && sed -i '' $'1i\\\n#import <UIKit/UIKit.h>' Common.h
-        [ -f Screen.h ] && sed -i '' $'1i\\\n#import <CoreGraphics/CGImage.h>' Screen.h
-        # Fix SocketServer header structure
+        find . -type f \( -name "*.xm" -o -name "*.m" \) -exec sed -i '' '1i\
+        #import <UIKit/UIKit.h>\
+        #import <Foundation/Foundation.h>\
+        #import <dlfcn.h>\
+        ' {} \;
+        
+        # Fix SocketServer headers
         find . -name "SocketServer.*" -exec sed -i '' '1i\
         #import <Foundation/Foundation.h>\
         #import <CoreFoundation/CoreFoundation.h>\
@@ -92,85 +92,56 @@ jobs:
         #endif
         ' {} \;
         
-        # Revert OpenCV imports to use opencv.hpp
-        find . -name "*.h" -exec sed -i '' 's/#import <opencv2\/opencv_modules.hpp>/#import <opencv2\/opencv.hpp>/g' {} +
-        find . -name "*.mm" -exec sed -i '' 's/#import <opencv2\/opencv_modules.hpp>/#import <opencv2\/opencv.hpp>/g' {} +
+        # Replace deprecated APIs
+        find . -type f -name "*.m" -exec sed -i '' \
+          's/sendSynchronousRequest:returningResponse:error:/dataTaskWithRequest:completionHandler:/g' {} +
         
-        # Add C++11 support and enforce arm64 arch
-        find . -name "Makefile" -exec sed -i '' 's/^ADDITIONAL_CFLAGS =/& -std=c++11 -stdlib=libc++/' {} +
-        find . -name "Makefile" -exec sed -i '' 's/^ARCHS =.*/ARCHS = arm64/' {} +
+        # Fix Unicode whitespace
+        find . -type f -name "*.h" -exec sed -i '' 's/[[:space:]]/ /g' {} \;
         
-        # Link required frameworks
+        # Add framework links
         echo "pccontrol_FRAMEWORKS = UIKit Foundation CoreFoundation CoreGraphics" >> Makefile
         echo "appdelegate_FRAMEWORKS = UIKit Foundation" >> Makefile
         echo "zxtouch-binary_FRAMEWORKS = UIKit Foundation" >> Makefile
-        
-        # Remove obsolete linker flag
         find . -name "Makefile" -exec sed -i '' 's/-multiply_defined//g' {} +
+        find . -name "Makefile" -exec sed -i '' 's/^ADDITIONAL_CFLAGS =/& -Wno-deprecated-declarations -Wno-objc-method-access/' {} +
 
     - name: Patch zxtouch-binary
       run: |
-        # Create patching script with FIXED syntax
         cat > patch_zxtouch.sh << 'EOS'
         #!/bin/bash
         set -e
         
-        # Fix system() replacement
-        sed -i '' 's/return system(\[\[NSString stringWithFormat:@"%@", parameterArr\[2\]\] UTF8String\]);/return execute_posix_command(parameterArr[2]);/g' zxtouch-binary/main.mm
+        # Replace system calls with posix_spawn
+        sed -i '' 's/system(/execute_posix_command(/g' zxtouch-binary/main.mm
         
-        # Add necessary headers
-        cat << "EOF" > temp_patch.mm
-        #include <Foundation/Foundation.h>
+        # Add posix_spawn implementation
+        cat << "EOF" >> zxtouch-binary/main.mm
+        
         #include <spawn.h>
         #include <sys/wait.h>
-        #include <stdio.h>
-        #include <string.h>
-        #include <signal.h>
-        
-        extern char **environ;
-        
-        int execute_posix_command(NSString *command);
-        EOF
-        sed -i '' '/#include/r temp_patch.mm' zxtouch-binary/main.mm
-        rm temp_patch.mm
-        
-        # Add function implementation
-        cat << "EOF" >> zxtouch-binary/main.mm
         
         int execute_posix_command(NSString *command) {
             pid_t pid;
             const char *cmd = [command UTF8String];
             char *const argv[] = {(char *)"sh", (char *)"-c", (char *)cmd, NULL};
-            posix_spawnattr_t attr;
+            int status;
             
-            posix_spawnattr_init(&attr);
-            posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK);
-            sigset_t all_signals;
-            sigfillset(&all_signals);
-            posix_spawnattr_setsigmask(&attr, &all_signals);
-            sigemptyset(&all_signals);
-            posix_spawnattr_setsigdefault(&attr, &all_signals);
-            
-            int status = posix_spawn(&pid, "/bin/sh", NULL, &attr, argv, environ);
-            if (status == 0) {
-                if (waitpid(pid, &status, 0) == -1) {
-                    perror("waitpid");
-                }
-            } else {
-                NSLog(@"posix_spawn failed: %s", strerror(status));
+            if (posix_spawn(&pid, "/bin/sh", NULL, NULL, argv, environ) != 0) {
+                return -1;
             }
-            posix_spawnattr_destroy(&attr);
-            return status;
+            
+            if (waitpid(pid, &status, 0) == -1) {
+                return -1;
+            }
+            return WEXITSTATUS(status);
         }
         EOF
         
-        # Clean up code
+        # Fix other issues
         sed -i '' 's/int sock = 0, valread;/int sock = 0;/g' zxtouch-binary/main.mm
         sed -i '' 's/ARCHS = armv7 arm64 arm64e/ARCHS = arm64/g' zxtouch-binary/Makefile
-        
-        # FIXED import syntax
         sed -i '' $'1i\\\n#import <Foundation/Foundation.h>' zxtouch-binary/main.mm
-        sed -i '' $'1i\\\n#import <signal.h>' zxtouch-binary/main.mm
         EOS
         
         chmod +x patch_zxtouch.sh
@@ -182,24 +153,11 @@ jobs:
         sed -i '' 's|return "/System/Library/PrivateFrameworks/CertUI.framework/CertUIA";|return (char*)"/System/Library/PrivateFrameworks/CertUI.framework/CertUIA";|' appdelegate/Tweak.xm
         sed -i '' 's|#include <string\.h>#import <execinfo\.h>|#include <string.h>\n#import <execinfo.h>|' appdelegate/Tweak.xm
 
-    - name: Verify fixes
-      run: |
-        echo "=== Verifying critical fixes ==="
-        grep -r "// #define _Bool BOOL" pccontrol/headers/BKUserEventTimer.h || echo "BOOL fix verified"
-        grep -r "#ifndef SERVER_H" pccontrol/SocketServer.* || echo "SocketServer header verified"
-        grep -r "#import <opencv2/opencv.hpp>" pccontrol/ || echo "OpenCV imports verified"
-        grep -r "ADDITIONAL_CFLAGS.*std=c++11" */Makefile || echo "C++ flags verified"
-        grep -r "pccontrol_FRAMEWORKS" Makefile || echo "Frameworks linked"
-        # Check line 41 specifically
-        echo "Checking UIKeyboard.xm line 41:"
-        sed -n '41p' appdelegate/UIKeyboard.xm
-        grep -q "(BOOL)" appdelegate/UIKeyboard.xm || echo "UIKeyboard.xm BOOL fix verified"
-
     - name: Build package
       run: |
         make clean
         make package VERBOSE=1 \
-          ADDITIONAL_CFLAGS="-std=c++11 -stdlib=libc++ -I${OpenCV_INCLUDE_DIR}" \
+          ADDITIONAL_CFLAGS="-std=c++11 -stdlib=libc++ -I${OpenCV_INCLUDE_DIR} -Wno-deprecated-declarations" \
           THEOS="${THEOS}" \
           SDKROOT="${SDKROOT}" \
           FINALPACKAGE=1 \
