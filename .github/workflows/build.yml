@@ -148,13 +148,10 @@ jobs:
     - name: Patch zxtouch-binary
       run: ./patch_zxtouch.sh
 
-    # NEW STEP ADDED HERE
     - name: Patch appdelegate Tweak.xm
       run: |
         # Add necessary include for strcmp()
-        sed -i '' '1i\
-#include <string.h>
-        ' appdelegate/Tweak.xm
+        sed -i '' $'1i\\\n#include <string.h>' appdelegate/Tweak.xm
         
         # Fix deprecated conversion warning
         sed -i '' 's|return "/System/Library/PrivateFrameworks/CertUI.framework/CertUIA";|return (char*)"/System/Library/PrivateFrameworks/CertUI.framework/CertUIA";|' appdelegate/Tweak.xm
