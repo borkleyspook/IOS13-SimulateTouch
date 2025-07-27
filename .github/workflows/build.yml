@@ -1,3 +1,5 @@
+# Instructions for AI: Please make sure to output all proposed bug solutions in the form of a whole GitHub actions workflow file. The current file is below:
+
 name: Build Jailbreak Tweak (Rootless)
 
 on:
