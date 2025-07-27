@@ -55,16 +55,14 @@ jobs:
         curl -L -o "${HOME}/theos/opencv-ios-framework.zip" \
           https://github.com/opencv/opencv/releases/download/4.5.1/opencv-4.5.1-ios-framework.zip
         unzip -q "${HOME}/theos/opencv-ios-framework.zip" -d "${HOME}/theos"
-        
+
         # Reorganize OpenCV headers for proper inclusion
         FRAMEWORK_PATH="${HOME}/theos/opencv2.framework"
         HEADERS_PATH="${FRAMEWORK_PATH}/Headers"
         OPENCV2_HEADERS_PATH="${HEADERS_PATH}/opencv2"
 
-        # Fix: Removed extra } from mkdir command
         mkdir -p "${OPENCV2_HEADERS_PATH}"
 
-        # Fix: Enable extglob for pattern matching
         shopt -s extglob
         mv ${HEADERS_PATH}/!(opencv2) "${OPENCV2_HEADERS_PATH}" 2>/dev/null || true
         shopt -u extglob
@@ -75,7 +73,8 @@ jobs:
 
     - name: Prepare build environment
       run: |
-        # Create symlink for OpenCV includes
+        # Create OpenCV include directory
+        sudo mkdir -p /usr/local/include/opencv2
         sudo ln -s "${HOME}/theos/opencv-ios-sdk/opencv2.framework/Headers/opencv2" /usr/local/include/opencv2 || true
         
         # Set build parameters
@@ -91,6 +90,44 @@ jobs:
         [ -d "appdelegate" ] && echo "✅ appdelegate found"
         [ -d "layout" ] && echo "✅ layout found"
         [ -d "pccontrol" ] && echo "✅ pccontrol found"
+
+    - name: Patch zxtouch-binary
+      run: |
+        # Fix 1: Replace unavailable 'system' function with posix_spawn
+        sed -i '' 's/return system(\[\[NSString stringWithFormat:@"%@", parameterArr\[2\]\] UTF8String\]);/return execute_posix_command(parameterArr[2]);/g' zxtouch-binary/main.mm
+        
+        # Fix 2: Add posix_spawn implementation
+        cat << EOF >> zxtouch-binary/main.mm
+        
+        int execute_posix_command(NSString *command) {
+            pid_t pid;
+            const char *cmd = [command UTF8String];
+            char *const argv[] = {"sh", "-c", (char *)cmd, NULL};
+            posix_spawnattr_t attr;
+            
+            posix_spawnattr_init(&attr);
+            posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGDEF|POSIX_SPAWN_SETSIGMASK);
+            sigset_t all_signals;
+            sigfillset(&all_signals);
+            posix_spawnattr_setsigmask(&attr, &all_signals);
+            sigemptyset(&all_signals);
+            posix_spawnattr_setsigdefault(&attr, &all_signals);
+            
+            int status = posix_spawn(&pid, "/bin/sh", NULL, &attr, argv, environ);
+            if (status == 0) {
+                if (waitpid(pid, &status, 0) == -1) {
+                    perror("waitpid");
+                }
+            } else {
+                printf("posix_spawn failed: %s\n", strerror(status));
+            }
+            posix_spawnattr_destroy(&attr);
+            return status;
+        }
+        EOF
+        
+        # Fix 3: Remove unsupported arm64e architecture
+        sed -i '' 's/ARCHS = armv7 arm64 arm64e/ARCHS = armv7 arm64/g' zxtouch-binary/Makefile
 
     - name: Build package
       run: |
