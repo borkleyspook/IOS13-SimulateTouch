@@ -152,7 +152,7 @@ jobs:
         ' zxtouch-binary/main.mm
         EOS
         chmod +x patch_zxtouch.sh
-    
+
     - name: Patch zxtouch-binary
       run: ./patch_zxtouch.sh
 
@@ -194,12 +194,23 @@ jobs:
 
     - name: Debug file content
       run: |
-        # ... existing debug commands ...
-        echo "=== Modified Makefile ==="
-        grep -E 'ADDITIONAL_CFLAGS|OpenCV_INCLUDE_DIR' Makefile
-        echo "=== SocketServer.h ==="
-        find . -name "SocketServer.h" -exec head -n 5 {} \;
+        # Check if files exist first
+        if [ -f zxtouch-binary/main.mm ]; then
+            echo "main.mm content:"
+            head -n 20 zxtouch-binary/main.mm
+        else
+            echo "Error: main.mm not found!"
+            exit 1
+        fi
         
+        if [ -f zxtouch-binary/Makefile ]; then
+            echo "Makefile ARCHS setting:"
+            grep -i "archs" zxtouch-binary/Makefile || echo "ARCHS not found in Makefile"
+        else
+            echo "Error: Makefile not found!"
+            exit 1
+        fi
+
 # ... rest of workflow ...
 
     - name: Build package
