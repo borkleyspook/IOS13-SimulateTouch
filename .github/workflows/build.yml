@@ -69,11 +69,11 @@ jobs:
         find . -name "*.xm" -exec sed -i '' 's/\b_Bool\b/BOOL/g' {} +
         sed -i '' 's/#define _Bool BOOL/\/\/ #define _Bool BOOL/' pccontrol/headers/BKUserEventTimer.h
         
-        # Add missing imports
-        [ -f Common.h ] && sed -i '' '1i\#import <UIKit/UIKit.h>' Common.h
-        [ -f Screen.h ] && sed -i '' '1i\#import <CoreGraphics/CGImage.h>' Screen.h
-        find . -name "SocketServer.*" -exec sed -i '' '1i\#import <CoreFoundation/CoreFoundation.h>' {} \;
-        find . -name "SocketServer.*" -exec sed -i '' '1i\#import <Foundation/Foundation.h>' {} \;
+        # Add missing imports (FIXED syntax)
+        [ -f Common.h ] && sed -i '' $'1i\\\n#import <UIKit/UIKit.h>' Common.h
+        [ -f Screen.h ] && sed -i '' $'1i\\\n#import <CoreGraphics/CGImage.h>' Screen.h
+        find . -name "SocketServer.*" -exec sed -i '' $'1i\\\n#import <CoreFoundation/CoreFoundation.h>' {} \;
+        find . -name "SocketServer.*" -exec sed -i '' $'1i\\\n#import <Foundation/Foundation.h>' {} \;
         
         # Fix OpenCV imports
         find . -name "*.h" -exec sed -i '' 's/#import <opencv2\/opencv.hpp>/#import <opencv2\/opencv_modules.hpp>/g' {} +
@@ -92,7 +92,7 @@ jobs:
 
     - name: Patch zxtouch-binary
       run: |
-        # Create patching script
+        # Create patching script with FIXED syntax
         cat > patch_zxtouch.sh << 'EOS'
         #!/bin/bash
         set -e
@@ -149,9 +149,12 @@ jobs:
         # Clean up code
         sed -i '' 's/int sock = 0, valread;/int sock = 0;/g' zxtouch-binary/main.mm
         sed -i '' 's/ARCHS = armv7 arm64 arm64e/ARCHS = arm64/g' zxtouch-binary/Makefile
-        sed -i '' '1i\#import <Foundation/Foundation.h>' zxtouch-binary/main.mm
-        sed -i '' '1i\#import <signal.h>' zxtouch-binary/main.mm
+        
+        # FIXED import syntax
+        sed -i '' $'1i\\\n#import <Foundation/Foundation.h>' zxtouch-binary/main.mm
+        sed -i '' $'1i\\\n#import <signal.h>' zxtouch-binary/main.mm
         EOS
+        
         chmod +x patch_zxtouch.sh
         ./patch_zxtouch.sh
 
