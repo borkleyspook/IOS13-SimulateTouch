@@ -59,6 +59,8 @@ jobs:
         
         echo "TARGET=iphone:clang:13.7:9.0" >> $GITHUB_ENV
         echo "ARCHS=arm64" >> $GITHUB_ENV
+        # Add this to override any subproject settings
+        find . -name Makefile -exec sed -i '' 's/^ARCHS =.*/ARCHS = arm64/' {} +
         echo "THEOS_PACKAGE_SCHEME=rootless" >> $GITHUB_ENV
         echo "FINALPACKAGE=1" >> $GITHUB_ENV
 
@@ -68,8 +70,10 @@ jobs:
         find . -name "*.h" -exec sed -i '' 's/\b_Bool\b/BOOL/g' {} +
         find . -name "*.xm" -exec sed -i '' 's/\b_Bool\b/BOOL/g' {} +
         sed -i '' 's/#define _Bool BOOL/\/\/ #define _Bool BOOL/' pccontrol/headers/BKUserEventTimer.h
+        # Add specific fix for UIKeyboard.xm
+        sed -i '' 's/\b_Bool\b/BOOL/g' appdelegate/UIKeyboard.xm
         
-        # Add missing imports (FIXED syntax)
+        # Add missing imports
         [ -f Common.h ] && sed -i '' $'1i\\\n#import <UIKit/UIKit.h>' Common.h
         [ -f Screen.h ] && sed -i '' $'1i\\\n#import <CoreGraphics/CGImage.h>' Screen.h
         find . -name "SocketServer.*" -exec sed -i '' $'1i\\\n#import <CoreFoundation/CoreFoundation.h>' {} \;
@@ -79,8 +83,9 @@ jobs:
         find . -name "*.h" -exec sed -i '' 's/#import <opencv2\/opencv.hpp>/#import <opencv2\/opencv_modules.hpp>/g' {} +
         find . -name "*.mm" -exec sed -i '' 's/#import <opencv2\/opencv.hpp>/#import <opencv2\/opencv_modules.hpp>/g' {} +
         
-        # Add C++11 support to all Makefiles
+        # Add C++11 support and enforce arm64 arch
         find . -name "Makefile" -exec sed -i '' 's/^ADDITIONAL_CFLAGS =/& -std=c++11 -stdlib=libc++/' {} +
+        find . -name "Makefile" -exec sed -i '' 's/^ARCHS =.*/ARCHS = arm64/' {} +
         
         # Link required frameworks
         echo "pccontrol_FRAMEWORKS = UIKit Foundation CoreFoundation CoreGraphics" >> Makefile
@@ -171,6 +176,8 @@ jobs:
         grep -r "#import <Foundation/Foundation.h>" pccontrol/SocketServer.* || echo "Foundation import verified"
         grep -r "ADDITIONAL_CFLAGS.*std=c++11" */Makefile || echo "C++ flags verified"
         grep -r "pccontrol_FRAMEWORKS" Makefile || echo "Frameworks linked"
+        # Verify UIKeyboard.xm fix
+        grep -r "BOOL" appdelegate/UIKeyboard.xm || echo "UIKeyboard.xm BOOL fix verified"
 
     - name: Build package
       run: |
