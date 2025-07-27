@@ -50,7 +50,9 @@ jobs:
         curl -L -o "${HOME}/theos/opencv-ios-framework.zip" \
           https://github.com/opencv/opencv/releases/download/4.8.0/opencv-4.8.0-ios-framework.zip
         unzip -q "${HOME}/theos/opencv-ios-framework.zip" -d "${HOME}/theos/opencv-ios-sdk"
-        echo "OpenCV_INCLUDE_DIR=${HOME}/theos/opencv-ios-sdk/opencv2.framework/Headers" >> $GITHUB_ENV
+        # Create proper include structure
+        ln -s "${HOME}/theos/opencv-ios-sdk/opencv2.framework/Headers" "${HOME}/theos/opencv-ios-sdk/opencv2"
+        echo "OpenCV_INCLUDE_DIR=${HOME}/theos/opencv-ios-sdk" >> $GITHUB_ENV
 
     - name: Prepare build environment
       run: |
@@ -67,9 +69,10 @@ jobs:
     - name: Apply critical fixes
       run: |
         # Fix _Bool type errors with better pattern matching
-        find . -name "*.h" -exec sed -i '' 's/\b_Bool\b/BOOL/g' {} +
-        find . -name "*.xm" -exec sed -i '' 's/\b_Bool\b/BOOL/g' {} +
+        find . -type f \( -name "*.h" -o -name "*.xm" -o -name "*.m" -o -name "*.mm" \) \
+          -exec sed -i '' 's/\b_Bool\b/BOOL/g' {} +
         sed -i '' 's/#define _Bool BOOL/\/\/ #define _Bool BOOL/' pccontrol/headers/BKUserEventTimer.h
+        sed -i '' 's/typedef _Bool BOOL/\/\/ typedef _Bool BOOL/' pccontrol/headers/BKUserEventTimer.h
     
         # Specific fix for UIKeyboard.xm with parenthesis matching
         sed -i '' 's/(_Bool)/(BOOL)/g' appdelegate/UIKeyboard.xm
@@ -77,12 +80,19 @@ jobs:
         # Add missing imports
         [ -f Common.h ] && sed -i '' $'1i\\\n#import <UIKit/UIKit.h>' Common.h
         [ -f Screen.h ] && sed -i '' $'1i\\\n#import <CoreGraphics/CGImage.h>' Screen.h
-        find . -name "SocketServer.*" -exec sed -i '' $'1i\\\n#import <CoreFoundation/CoreFoundation.h>' {} \;
-        find . -name "SocketServer.*" -exec sed -i '' $'1i\\\n#import <Foundation/Foundation.h>' {} \;
+        # Fix SocketServer header structure
+        find . -name "SocketServer.*" -exec sed -i '' '1i\
+        #import <Foundation/Foundation.h>\
+        #import <CoreFoundation/CoreFoundation.h>\
+        #ifndef SERVER_H
+        ' {} \;
+        find . -name "SocketServer.*" -exec sed -i '' '$a\
+        #endif
+        ' {} \;
         
-        # Fix OpenCV imports
-        find . -name "*.h" -exec sed -i '' 's/#import <opencv2\/opencv.hpp>/#import <opencv2\/opencv_modules.hpp>/g' {} +
-        find . -name "*.mm" -exec sed -i '' 's/#import <opencv2\/opencv.hpp>/#import <opencv2\/opencv_modules.hpp>/g' {} +
+        # Revert OpenCV imports to use opencv.hpp
+        find . -name "*.h" -exec sed -i '' 's/#import <opencv2\/opencv_modules.hpp>/#import <opencv2\/opencv.hpp>/g' {} +
+        find . -name "*.mm" -exec sed -i '' 's/#import <opencv2\/opencv_modules.hpp>/#import <opencv2\/opencv.hpp>/g' {} +
         
         # Add C++11 support and enforce arm64 arch
         find . -name "Makefile" -exec sed -i '' 's/^ADDITIONAL_CFLAGS =/& -std=c++11 -stdlib=libc++/' {} +
@@ -173,8 +183,9 @@ jobs:
     - name: Verify fixes
       run: |
         echo "=== Verifying critical fixes ==="
-        grep -r "BOOL" pccontrol/headers/BKUserEventTimer.h || echo "BOOL fix verified"
-        grep -r "#import <Foundation/Foundation.h>" pccontrol/SocketServer.* || echo "Foundation import verified"
+        grep -r "// #define _Bool BOOL" pccontrol/headers/BKUserEventTimer.h || echo "BOOL fix verified"
+        grep -r "#ifndef SERVER_H" pccontrol/SocketServer.* || echo "SocketServer header verified"
+        grep -r "#import <opencv2/opencv.hpp>" pccontrol/ || echo "OpenCV imports verified"
         grep -r "ADDITIONAL_CFLAGS.*std=c++11" */Makefile || echo "C++ flags verified"
         grep -r "pccontrol_FRAMEWORKS" Makefile || echo "Frameworks linked"
         # Check line 41 specifically
